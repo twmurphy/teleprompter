@@ -66,8 +66,12 @@ export default function App() {
         anchorRef.current = cursorRef.current
       }
       const next = advanceCursor(script, anchorRef.current, words)
-      moveCursor(next)
-      if (isFinal) anchorRef.current = next
+      // Speech only ever moves the cursor forward. The engine revises an
+      // utterance as it firms up, and a revision that resolves earlier is it
+      // changing its mind, not the reader going back — following that is what
+      // makes the script rock. Backwards is reserved for tapping a word.
+      moveCursor(Math.max(next, cursorRef.current))
+      if (isFinal) anchorRef.current = cursorRef.current
     },
     [script, moveCursor],
   )
