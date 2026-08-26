@@ -55,9 +55,6 @@ type Options = {
   onUtterance: (utterance: Utterance) => void
 }
 
-/** Which recognition engine the current session ended up on. */
-export type Engine = 'on-device' | 'cloud'
-
 /** Settings resolved once per session and reused across auto-restarts. */
 type Config = { lang: string; processLocally: boolean }
 
@@ -111,10 +108,6 @@ async function resolveConfig(Ctor: SpeechRecognitionCtor): Promise<Config> {
  */
 export function useDictation({ onUtterance }: Options) {
   const [state, setState] = useState<DictationState>('off')
-  const [engine, setEngine] = useState<Engine | null>(null)
-  // Raw text straight from the engine, so you can see whether it hears anything
-  // at all separately from whether the matcher is tracking it.
-  const [heard, setHeard] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const recognitionRef = useRef<SpeechRecognition | null>(null)
@@ -132,7 +125,6 @@ export function useDictation({ onUtterance }: Options) {
     recognitionRef.current?.stop()
     recognitionRef.current = null
     setState('off')
-    setEngine(null)
   }, [])
 
   const start = useCallback(async () => {
@@ -165,7 +157,6 @@ export function useDictation({ onUtterance }: Options) {
 
       recognition.onstart = () => {
         sessionRef.current += 1
-        setEngine(configRef.current.processLocally ? 'on-device' : 'cloud')
         setState('listening')
       }
 
@@ -175,7 +166,6 @@ export function useDictation({ onUtterance }: Options) {
         const result = event.results[index]
         if (!result) return
         const text = result[0].transcript.trim()
-        setHeard(text)
         onUtteranceRef.current({
           id: `${sessionRef.current}:${index}`,
           words: transcriptWords(text),
@@ -226,5 +216,5 @@ export function useDictation({ onUtterance }: Options) {
     recognitionRef.current?.abort()
   }, [])
 
-  return { state, engine, error, heard, start, stop }
+  return { state, error, start, stop }
 }

@@ -1,11 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { advanceCursor, parseScript } from './match'
-import {
-  dictationSupported,
-  useDictation,
-  type Utterance,
-} from './useDictation'
-import { useMicLevel } from './useMicLevel'
+import { useDictation, type Utterance } from './useDictation'
 
 const STORAGE_KEY = 'teleprompter:script'
 
@@ -53,24 +48,12 @@ export default function App() {
   )
 
   const dictation = useDictation({ onUtterance: handleUtterance })
-  const mic = useMicLevel()
-
-  // The level meter runs alongside recognition so a silent meter and a silent
-  // transcript can be told apart.
-  const startListening = () => {
-    void mic.start()
-    void dictation.start()
-  }
-  const stopListening = () => {
-    mic.stop()
-    dictation.stop()
-  }
 
   // Entering Play starts listening; leaving it releases the mic. There is no
   // manual control — reading aloud is the only thing Play mode is for.
   const goTo = (next: Mode) => {
-    if (next === 'play') startListening()
-    else stopListening()
+    if (next === 'play') void dictation.start()
+    else dictation.stop()
     setMode(next)
   }
 
@@ -105,25 +88,6 @@ export default function App() {
         <Stage script={script} text={text} cursor={cursor} onSeek={moveCursor} />
       )}
 
-      {mode === 'play' && (
-        <footer className="status">
-          <div>
-            {!dictationSupported()
-              ? 'No speech recognition in this browser — use Chrome.'
-              : dictation.error
-                ? dictation.error
-                : dictation.state === 'listening'
-                  ? `Listening — ${dictation.engine} engine.`
-                  : dictation.state === 'starting'
-                    ? 'Starting…'
-                    : 'Starting…'}
-          </div>
-          {/* Raw engine output. If this stays empty the microphone or engine is
-              the problem; if it fills but nothing highlights, the matcher is. */}
-          <MicMeter barRef={mic.barRef} active={mic.active} error={mic.error} />
-          {dictation.heard && <div className="heard">heard: {dictation.heard}</div>}
-        </footer>
-      )}
     </div>
   )
 }
@@ -204,30 +168,3 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
     </div>
   )
 })
-
-/**
- * Input level straight from the Web Audio API. Independent of recognition:
- * if this moves while nothing is transcribed, the microphone is not the problem.
- * The bar is driven by `useMicLevel` writing to the DOM, so it never re-renders.
- */
-function MicMeter({
-  barRef,
-  active,
-  error,
-}: {
-  barRef: React.RefObject<HTMLDivElement | null>
-  active: boolean
-  error: string | null
-}) {
-  if (error) return <div className="diag">mic error: {error}</div>
-  if (!active) return null
-
-  return (
-    <div className="meter-row">
-      <span className="meter-label">mic</span>
-      <div className="meter">
-        <div className="meter-fill" ref={barRef} data-signal="no" />
-      </div>
-    </div>
-  )
-}
