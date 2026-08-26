@@ -1,4 +1,5 @@
 import { identify } from './access'
+import { handleScripts } from './scripts'
 
 /**
  * Serves the built app and its API.
@@ -19,6 +20,10 @@ export default {
 
     if (url.pathname === '/api/me' && request.method === 'GET') {
       return Response.json(identity)
+    }
+
+    if (url.pathname.startsWith('/api/scripts')) {
+      return handleScripts(request, env, identity, url.pathname)
     }
 
     return Response.json({ error: 'Not found' }, { status: 404 })

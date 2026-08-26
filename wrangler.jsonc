@@ -14,6 +14,14 @@
     "ACCESS_TEAM_DOMAIN": "twm-sandbox.cloudflareaccess.com",
     "ACCESS_AUD": "416ffe0d63d7e2228a37e168a0fe1b1d862ea82853efcd76237234a1d70916b0"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "teleprompter",
+      "database_id": "9b52124f-6793-44f6-91cb-32e0fe230613",
+      "migrations_dir": "migrations"
+    }
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
