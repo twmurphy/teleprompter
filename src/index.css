@@ -95,6 +95,16 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
   line-height: 1.5;
   font-weight: 600;
   color: var(--fg);
+
+  /* The script scrolls itself; a visible scrollbar is just clutter on a
+     prompter, and its width would shift the centred column. Still scrollable
+     by touch, wheel and the follow animation. */
+  scrollbar-width: none;
+}
+
+/* Older Chrome and Safari, which predate scrollbar-width. */
+.stage::-webkit-scrollbar {
+  display: none;
 }
 
 /* Already spoken: recede but stay readable if you need to back up. */
