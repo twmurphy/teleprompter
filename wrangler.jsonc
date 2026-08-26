@@ -4,6 +4,12 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-08-26",
   "observability": { "enabled": true },
+  // Neither is secret: the AUD is a public application identifier and the team
+  // domain hosts the public signing keys. They pin token checks to this app.
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "twm-sandbox.cloudflareaccess.com",
+    "ACCESS_AUD": "416ffe0d63d7e2228a37e168a0fe1b1d862ea82853efcd76237234a1d70916b0"
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
