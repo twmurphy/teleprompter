@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "teleprompter",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-26",
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // The app is one page; anything that is not a real file is still the app.
+    "not_found_handling": "single-page-application",
+    // API routes must reach the Worker rather than falling through to index.html.
+    "run_worker_first": ["/api/*"]
+  }
+}
