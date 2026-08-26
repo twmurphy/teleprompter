@@ -47,18 +47,36 @@ export const transcriptWords = (text: string): string[] =>
   text.toLowerCase().split(/\s+/).map(normalize).filter(Boolean)
 
 /**
- * How far either side of the cursor to look. Deliberately small — see above.
- * Larger values track sloppier reading but make the highlight jumpy.
+ * How far either side of the cursor to look. Deliberately small: a wide window
+ * lets words the engine re-sends match a later copy of themselves.
  */
 export const SEEK_RANGE = 5
 
 /**
+ * Weight for a candidate whose following word also matches what was said next.
+ * A lone common word is weak evidence — "the" appears everywhere, and letting
+ * one drag the cursor is how tracking drifts. The same word backed by its
+ * neighbour is strong evidence, so a confirmed candidate outranks any
+ * unconfirmed one however close.
+ */
+const PAIR_BONUS = 4
+
+/** Words too common to move the cursor on their own evidence. */
+const COMMON = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'if', 'in',
+  'is', 'it', 'of', 'on', 'or', 'so', 'that', 'the', 'to', 'was', 'we', 'you',
+])
+
+/**
  * Advance `cursor` through `script` for each spoken word.
  *
- * Candidates are scored by `1 / offset`, so the nearest match wins; a hit
- * directly under the cursor short-circuits. Forward and backward are weighted
- * equally, with ties going to the forward match. Words matching nothing in the
- * window are ignored, which is what makes re-sent and misheard words harmless.
+ * Candidates are scored by closeness (`1 / offset`), and heavily favoured when
+ * the next spoken word also lands on the next script word. A common word with
+ * no such confirmation may only match where it was already expected, so it can
+ * confirm a position but never choose one.
+ *
+ * Words matching nothing are ignored, which is what makes re-sent and misheard
+ * words harmless.
  */
 export function advanceCursor(
   script: ScriptWord[],
@@ -68,31 +86,36 @@ export function advanceCursor(
 ): number {
   let position = cursor
 
-  for (const word of heard) {
+  for (let h = 0; h < heard.length; h++) {
+    const word = heard[h]
+    const following = heard[h + 1]
+
     let bestPosition = -1
     let bestWeight = 0
 
     for (let offset = 0; offset <= seekRange; offset++) {
-      const ahead = position + offset < script.length ? script[position + offset].key : null
-      const behind = position - offset >= 0 ? script[position - offset].key : null
+      for (const candidate of offset === 0
+        ? [position]
+        : [position + offset, position - offset]) {
+        if (candidate < 0 || candidate >= script.length) continue
 
-      if (offset === 0) {
-        if (ahead === word) {
-          bestPosition = position
-          bestWeight = 1
-          break
+        if (script[candidate].key !== word) continue
+
+        const confirmed =
+          following !== undefined &&
+          candidate + 1 < script.length &&
+          script[candidate + 1].key === following
+
+        // An unconfirmed common word is not evidence of a new position.
+        if (!confirmed && offset > 0 && COMMON.has(word)) continue
+
+        const distance = candidate >= position ? offset : offset * 2
+        const weight = (1 / (1 + distance)) * (confirmed ? PAIR_BONUS : 1)
+
+        if (weight > bestWeight) {
+          bestWeight = weight
+          bestPosition = candidate
         }
-        continue
-      }
-
-      const weight = 1 / offset
-      if (ahead === word && weight > bestWeight) {
-        bestPosition = position + offset
-        bestWeight = weight
-      }
-      if (behind === word && weight > bestWeight) {
-        bestPosition = position - offset
-        bestWeight = weight
       }
     }
 
