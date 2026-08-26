@@ -1,7 +1,9 @@
 # Teleprompter
 
-Two modes — **Edit** and **Play**. Play mode listens to you read and highlights
-words as it hears them, keeping the current word in the middle of the screen.
+Two modes — **Edit** and **Play**. Entering Play starts listening straight away
+and highlights words as it hears them, keeping the current word a third of the
+way down the screen. Leaving Play releases the microphone. There are no other
+controls.
 
 ## Running it
 
@@ -32,7 +34,9 @@ Uses the native [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/AP
   `SpeechRecognition.available()` first and only opts in on `"available"`. If a
   pack is `"downloadable"` it triggers `install()` in the background and uses
   the cloud engine for that session; on-device picks up next time. The status
-  line under the script tells you which engine you actually got.
+  line under the script tells you which engine you actually got. In practice
+  on-device often reports `unavailable`, in which case recognition is Google's
+  cloud service: it needs a network connection and is not private.
 - Chrome on Android ends a recognition session after a few seconds of silence
   even with `continuous = true`
   ([chromium#40324711](https://issues.chromium.org/issues/40324711)), so the
@@ -41,16 +45,24 @@ Uses the native [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/AP
 
 ## How the highlighting works
 
-`match.ts` never expects a clean transcript. It holds a cursor into the script
-and, for each word the engine reports, looks up to 12 words ahead for a loose
-match. Words that match nothing are ignored, so background noise and
-misrecognitions can't drag your place away. If it does lose you, **tap the word
-you're actually on** to move the cursor there.
+`match.ts` holds a cursor into the script and, for each word the engine reports,
+searches five words either side of it. Candidates are scored by `1 / offset` so
+the nearest wins, and matching is exact.
+
+That narrow, exact window is load-bearing rather than lazy. The engine re-sends
+a whole utterance every time it firms up, so words you already spoke arrive
+again and again; because they fall outside the window they match nothing and are
+ignored. Widening the window or matching loosely makes those re-sent words match
+a second time and the highlight lurches forward. Same reason noise and
+misrecognitions are harmless.
+
+If it does lose you, **tap the word you're actually on** to move the cursor.
 
 ## Files
 
     src/match.ts        script parsing + cursor advancement
-    src/useDictation.ts Web Speech API wrapper (restart + de-duplication)
+    src/useDictation.ts Web Speech API wrapper (engine negotiation + restart)
+    src/useMicLevel.ts  input level meter, independent of recognition
     src/App.tsx         the two modes and the scrolling stage
 
 The script is saved to `localStorage` as you type.
