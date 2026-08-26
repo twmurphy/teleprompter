@@ -49,11 +49,19 @@ export default function App() {
 
   const dictation = useDictation({ onUtterance: handleUtterance })
 
-  // Entering Play starts listening; leaving it releases the mic. There is no
-  // manual control — reading aloud is the only thing Play mode is for.
+  // Entering Play starts listening and goes fullscreen; leaving it undoes both.
+  // There is no manual control — reading aloud is the only thing Play mode is
+  // for. Fullscreen has to be requested from a user gesture, which the button
+  // click provides; if the browser refuses we carry on windowed rather than
+  // block the read.
   const goTo = (next: Mode) => {
-    if (next === 'play') void dictation.start()
-    else dictation.stop()
+    if (next === 'play') {
+      document.documentElement.requestFullscreen?.().catch(() => {})
+      void dictation.start()
+    } else {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+      dictation.stop()
+    }
     setMode(next)
   }
 
