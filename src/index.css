@@ -1,0 +1,160 @@
+:root {
+  --bg: #0d0d0f;
+  --dim: #4a4a52;
+  --fg: #e8e8ea;
+  --accent: #ffd24a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Stop iOS/Android double-tap zoom while tapping words to re-seek. */
+  touch-action: manipulation;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* --- top bar --------------------------------------------------------- */
+
+.bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid #232329;
+  flex: none;
+}
+
+.modes { display: flex; gap: 0.4rem; }
+
+button {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.55rem 1rem;
+  min-height: 44px; /* comfortable phone tap target */
+  border: 1px solid #2e2e36;
+  border-radius: 8px;
+  background: #17171b;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+/* --- edit mode ------------------------------------------------------- */
+
+.editor {
+  flex: 1;
+  width: 100%;
+  padding: 1.2rem;
+  border: 0;
+  resize: none;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  outline: none;
+}
+
+/* --- play mode ------------------------------------------------------- */
+
+.stage {
+  flex: 1;
+  /* Makes the stage the offsetParent, so word offsetTop is measured against it. */
+  position: relative;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  padding: 45vh 1.2rem;
+  font-size: clamp(1.6rem, 5.5vw, 3rem);
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* Already spoken: recede but stay readable if you need to back up. */
+.stage .said { color: var(--dim); }
+
+.stage .now {
+  color: var(--bg);
+  background: var(--accent);
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--accent);
+}
+
+.status {
+  flex: none;
+  padding: 0.6rem 0.8rem;
+  border-top: 1px solid #232329;
+  font-size: 0.85rem;
+  color: var(--dim);
+}
+
+.status { display: flex; flex-direction: column; gap: 0.35rem; }
+
+.heard {
+  color: var(--fg);
+  opacity: 0.75;
+  font-style: italic;
+}
+
+/* Used by the microphone error message. */
+.diag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--dim);
+}
+
+.diag button {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.6rem;
+  min-height: 0;
+}
+
+/* --- microphone level meter ------------------------------------------ */
+
+.meter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.meter-label {
+  color: var(--dim);
+  min-width: 2.6rem;
+}
+
+.meter {
+  flex: 1;
+  height: 8px;
+  background: #1e1e24;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  background: #3a3a44;
+  border-radius: 4px;
+  /* Smoothing happens per-frame in the hook; a CSS transition on top would
+     just add lag. */
+}
+
+.meter-fill[data-signal='yes'] { background: #46d17b; }
