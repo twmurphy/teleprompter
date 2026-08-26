@@ -47,81 +47,107 @@ export const transcriptWords = (text: string): string[] =>
   text.toLowerCase().split(/\s+/).map(normalize).filter(Boolean)
 
 /**
- * How far either side of the cursor to look. Deliberately small: a wide window
- * lets words the engine re-sends match a later copy of themselves.
+ * How much of what was just said to align. Long enough to be distinctive,
+ * short enough that it is still about where you are now.
  */
-export const SEEK_RANGE = 5
+const PHRASE = 8
 
 /**
- * Weight for a candidate whose following word also matches what was said next.
- * A lone common word is weak evidence — "the" appears everywhere, and letting
- * one drag the cursor is how tracking drifts. The same word backed by its
- * neighbour is strong evidence, so a confirmed candidate outranks any
- * unconfirmed one however close.
+ * Search window. Wider than a single-word matcher could afford: an alignment of
+ * several consecutive words is hard to fool, so looking further ahead recovers
+ * from a dropped phrase instead of stalling, without inviting false matches.
  */
-const PAIR_BONUS = 4
+const FORWARD = 30
+const BACK = 8
 
-/** Words too common to move the cursor on their own evidence. */
+/** Words an alignment may step over — a misheard word, or "10:30" in the script. */
+const MAX_SKIPS = 2
+
+/** Words too weak to establish a position alone, however close. */
 const COMMON = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'if', 'in',
   'is', 'it', 'of', 'on', 'or', 'so', 'that', 'the', 'to', 'was', 'we', 'you',
 ])
 
 /**
- * Advance `cursor` through `script` for each spoken word.
+ * Line `phrase` up against the script from `start`, tolerating a few misses on
+ * either side, and report how many words matched and where it ended.
+ */
+function align(script: ScriptWord[], start: number, phrase: string[]) {
+  let s = start
+  let p = 0
+  let matched = 0
+  let end = start
+  let skips = 0
+
+  while (s < script.length && p < phrase.length && skips <= MAX_SKIPS) {
+    if (script[s].key === phrase[p]) {
+      matched++
+      s++
+      p++
+      end = s
+    } else if (s + 1 < script.length && script[s + 1].key === phrase[p]) {
+      s++ // a script word the engine never returns, such as a number
+      skips++
+    } else if (p + 1 < phrase.length && script[s].key === phrase[p + 1]) {
+      p++ // a misheard or dropped word
+      skips++
+    } else {
+      s++
+      p++
+      skips++
+    }
+  }
+
+  return { matched, end }
+}
+
+/**
+ * Advance `cursor` through `script` using what was just said.
  *
- * Candidates are scored by closeness (`1 / offset`), and heavily favoured when
- * the next spoken word also lands on the next script word. A common word with
- * no such confirmation may only match where it was already expected, so it can
- * confirm a position but never choose one.
+ * Rather than committing word by word — where a lone "the" is the only evidence
+ * available and the nearest copy wins — every candidate position is scored on
+ * how much of the phrase lines up there against how far it is from the current
+ * position. Agreement is squared, so a run of four matching words outweighs a
+ * closer run of two, while proximity still breaks ties between equally good
+ * alignments.
  *
- * Words matching nothing are ignored, which is what makes re-sent and misheard
- * words harmless.
+ * This is also what makes re-sent transcripts harmless: the same phrase aligns
+ * the same way every time, so hearing it twice changes nothing.
  */
 export function advanceCursor(
   script: ScriptWord[],
   cursor: number,
   heard: string[],
-  seekRange: number = SEEK_RANGE,
 ): number {
-  let position = cursor
+  // Only the tail matters; earlier words have already moved the cursor.
+  const phrase = heard.slice(-PHRASE)
+  if (phrase.length === 0) return cursor
 
-  for (let h = 0; h < heard.length; h++) {
-    const word = heard[h]
-    const following = heard[h + 1]
+  let bestEnd = cursor
+  let bestScore = 0
 
-    let bestPosition = -1
-    let bestWeight = 0
+  const from = Math.max(0, cursor - BACK)
+  const to = Math.min(script.length, cursor + FORWARD)
 
-    for (let offset = 0; offset <= seekRange; offset++) {
-      for (const candidate of offset === 0
-        ? [position]
-        : [position + offset, position - offset]) {
-        if (candidate < 0 || candidate >= script.length) continue
+  for (let start = from; start < to; start++) {
+    if (script[start].key !== phrase[0]) continue
 
-        if (script[candidate].key !== word) continue
+    const { matched, end } = align(script, start, phrase)
+    if (matched === 0) continue
 
-        const confirmed =
-          following !== undefined &&
-          candidate + 1 < script.length &&
-          script[candidate + 1].key === following
+    // One word is only evidence where we already expected it, and a common word
+    // is not even that.
+    if (matched < 2 && (start !== cursor || COMMON.has(phrase[0]))) continue
 
-        // An unconfirmed common word is not evidence of a new position.
-        if (!confirmed && offset > 0 && COMMON.has(word)) continue
+    const distance = start >= cursor ? start - cursor : (cursor - start) * 2
+    const score = (matched * matched) / (1 + distance)
 
-        const distance = candidate >= position ? offset : offset * 2
-        const weight = (1 / (1 + distance)) * (confirmed ? PAIR_BONUS : 1)
-
-        if (weight > bestWeight) {
-          bestWeight = weight
-          bestPosition = candidate
-        }
-      }
+    if (score > bestScore) {
+      bestScore = score
+      bestEnd = end
     }
-
-    // Move on immediately so later words in the same batch search from here.
-    if (bestPosition >= 0) position = bestPosition + 1
   }
 
-  return position
+  return bestEnd
 }
