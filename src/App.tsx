@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Cog, RotateCcw } from 'lucide-react'
+import { RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { advanceCursor, parseScript } from './match'
 import { useDictation, type Utterance } from './useDictation'
 import { LIMITS, useSettings, type Settings } from './useSettings'
@@ -131,7 +131,7 @@ export default function App() {
             aria-expanded={settingsOpen}
             title="Reading settings"
           >
-            <Cog size={18} aria-hidden />
+            <SlidersHorizontal size={18} aria-hidden />
           </button>
         </div>
       </header>
