@@ -197,7 +197,10 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
 
   return (
     <div className="stage" ref={containerRef}>
-      {nodes}
+      {/* Lead-in and lead-out space lives on the inner element. Put it on the
+          scroll container instead and its padding sets a floor on the box
+          height, which forces the whole page to scroll. */}
+      <div className="stage-inner">{nodes}</div>
     </div>
   )
 })
