@@ -1,59 +1,32 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RotateCcw, SlidersHorizontal } from 'lucide-react'
+import {
+  LogOut,
+  PanelLeft,
+  Plus,
+  RotateCcw,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react'
 import { advanceCursor, parseScript } from './match'
 import { useDictation, type Utterance } from './useDictation'
 import { LIMITS, useSettings, type Settings } from './useSettings'
-
-const STORAGE_KEY = 'teleprompter:script'
-
-const SAMPLE = `Good morning, and welcome.
-
-This is a sample script designed to test a teleprompter at a comfortable speaking pace. As you read, pay attention to the size of the text, the scrolling speed, and how easily your eyes can follow each line.
-
-Today, we are testing several kinds of sentences.
-
-Some are short.
-
-Others are slightly longer, giving you time to see how the teleprompter handles natural pauses, changes in rhythm, and longer stretches of continuous speech.
-
-Now, let's test a few numbers. The time is 10:30. The temperature is 72 degrees. Our sample project includes 3 stages, 12 tasks, and a target completion rate of 95 percent.
-
-Next, we'll test punctuation.
-
-Does a question mark create a natural pause? What about a comma, a semicolon, or a colon? And when a sentence ends, is there enough space to comfortably move to the next line?
-
-Here is a slightly faster section.
-
-The goal of a good teleprompter is not to make the speaker appear to be reading. Instead, it should help the speaker maintain eye contact, deliver information clearly, and move through the script at a natural and consistent pace.
-
-Now slow down.
-
-Take a brief pause.
-
-Look directly at the camera.
-
-Then continue.
-
-This final section can be used to test the end of the script. Check that the last few lines remain visible long enough to read comfortably and that the scrolling stops at the correct position.
-
-Thank you for testing the teleprompter.
-
-This concludes the sample script.`
+import { useScripts, type SaveState, type ScriptSummary } from './useScripts'
 
 type Mode = 'edit' | 'play'
 
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('edit')
-  const [text, setText] = useState(
-    () => localStorage.getItem(STORAGE_KEY) ?? SAMPLE,
-  )
   const [cursor, setCursor] = useState(0)
+  const scripts = useScripts()
+  const me = useMe()
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, text)
-  }, [text])
+  // Wide screens have room for the list beside the editor; narrow ones do not.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => window.matchMedia('(min-width: 768px)').matches,
+  )
 
+  const text = scripts.current?.body ?? ''
   const script = useMemo(() => parseScript(text), [text])
 
   // The engine can deliver several batches before React re-renders, so the
@@ -99,6 +72,20 @@ export default function App() {
   return (
     <div className="app">
       <header className="bar">
+        <div className="left">
+          {mode === 'edit' && (
+            <button
+              className={sidebarOpen ? 'icon on' : 'icon'}
+              onClick={() => setSidebarOpen((open) => !open)}
+              aria-label="Show script list"
+              aria-expanded={sidebarOpen}
+              title="Script list"
+            >
+              <PanelLeft size={18} aria-hidden />
+            </button>
+          )}
+        </div>
+
         <div className="segmented" role="group">
           <button
             className={mode === 'edit' ? 'on' : ''}
@@ -150,15 +137,35 @@ export default function App() {
           />
         )}
 
-        {mode === 'edit' ? (
-          <textarea
-            className="editor"
-            style={{ fontSize: `calc(1.1rem * ${settings.scale})` }}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Paste or type your script…"
-            spellCheck={false}
+        {mode === 'edit' && sidebarOpen && (
+          <Sidebar
+            list={scripts.list}
+            currentId={scripts.current?.id ?? null}
+            loading={scripts.loading}
+            error={scripts.error}
+            saveState={scripts.saveState}
+            email={me}
+            onOpen={scripts.open}
+            onCreate={scripts.create}
+            onDelete={scripts.remove}
           />
+        )}
+
+        {mode === 'edit' ? (
+          scripts.current ? (
+            <textarea
+              className="editor"
+              style={{ fontSize: `calc(1.1rem * ${settings.scale})` }}
+              value={text}
+              onChange={(e) => scripts.edit(e.target.value)}
+              placeholder="Paste or type your script…"
+              spellCheck={false}
+            />
+          ) : (
+            <p className="empty">
+              {scripts.loading ? 'Loading…' : 'No script open. Create one to start.'}
+            </p>
+          )
         ) : (
           <Stage
             script={script}
@@ -334,5 +341,97 @@ function SettingsPanel({
         <button onClick={onClose}>Done</button>
       </div>
     </div>
+  )
+}
+
+/** The signed-in email, from the Access token the Worker verified. */
+function useMe() {
+  const [email, setEmail] = useState<string | null>(null)
+  useEffect(() => {
+    fetch('/api/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((who: { email: string } | null) => setEmail(who?.email ?? null))
+      .catch(() => setEmail(null))
+  }, [])
+  return email
+}
+
+const SAVE_LABEL: Record<SaveState, string> = {
+  idle: '',
+  saving: 'Saving…',
+  saved: 'Saved',
+  failed: 'Not saved — check your connection',
+}
+
+/**
+ * The script list. Titles come from each script's opening line, so editing a
+ * script renames it here and there is nothing separate to keep in sync.
+ */
+function Sidebar({
+  list,
+  currentId,
+  loading,
+  error,
+  saveState,
+  email,
+  onOpen,
+  onCreate,
+  onDelete,
+}: {
+  list: ScriptSummary[]
+  currentId: string | null
+  loading: boolean
+  error: string | null
+  saveState: SaveState
+  email: string | null
+  onOpen: (id: string) => void
+  onCreate: () => void
+  onDelete: (id: string) => void
+}) {
+  return (
+    <aside className="sidebar">
+      <button className="new" onClick={onCreate}>
+        <Plus size={16} aria-hidden /> New script
+      </button>
+
+      <div className="scripts">
+        {loading && <p className="note">Loading…</p>}
+        {error && <p className="note error">{error}</p>}
+        {!loading && !error && list.length === 0 && (
+          <p className="note">No scripts yet.</p>
+        )}
+
+        {list.map((entry) => (
+          <div
+            key={entry.id}
+            className={entry.id === currentId ? 'script on' : 'script'}
+          >
+            <button className="title" onClick={() => onOpen(entry.id)}>
+              {entry.title}
+            </button>
+            <button
+              className="icon remove"
+              aria-label={`Delete ${entry.title}`}
+              onClick={() => {
+                if (confirm(`Delete "${entry.title}"? This cannot be undone.`)) {
+                  onDelete(entry.id)
+                }
+              }}
+            >
+              <Trash2 size={15} aria-hidden />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <footer className="account">
+        <span className="save">{SAVE_LABEL[saveState]}</span>
+        {email && <span className="who">{email}</span>}
+        {/* Access owns the session, so signing out is its endpoint, not ours. */}
+        <a className="signout" href="/cdn-cgi/access/logout">
+          <LogOut size={14} aria-hidden /> Sign out
+        </a>
+      </footer>
+    </aside>
   )
 }

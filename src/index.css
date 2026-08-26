@@ -48,7 +48,9 @@ body {
 
 .tools { grid-column: 3; justify-self: end; }
 
-.tools { display: flex; gap: 0.4rem; }
+.left, .tools { display: flex; gap: 0.4rem; }
+
+.left { grid-column: 1; }
 
 
 /* Edit and Play are one control with two states, not two separate actions. */
@@ -214,4 +216,115 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
   opacity: 0.55;
   pointer-events: none;
   z-index: 1;
+}
+
+/* --- script list ------------------------------------------------------ */
+
+.sidebar {
+  flex: none;
+  width: min(260px, 70vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  border-right: 1px solid #232329;
+  background: #101014;
+  overflow: hidden;
+}
+
+.new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex: none;
+}
+
+/* The list is the only part that should scroll. */
+.scripts {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.script {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+
+.script:hover { background: #17171b; }
+.script.on { background: #1d1d23; }
+
+/* Titles are script text, so they can be any length — clip rather than wrap. */
+.script .title {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.6rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.script .remove {
+  width: 34px;
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  opacity: 0;
+}
+
+/* Always reachable by touch, where there is no hover to reveal it. */
+.script:hover .remove,
+.script.on .remove,
+.script .remove:focus-visible { opacity: 1; }
+
+@media (hover: none) {
+  .script .remove { opacity: 1; }
+}
+
+.account {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #232329;
+  font-size: 0.72rem;
+  color: var(--dim);
+}
+
+.account .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account .save { min-height: 1em; }
+
+.signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.signout:hover { color: var(--fg); }
+
+.note { margin: 0.4rem 0.2rem; font-size: 0.8rem; color: var(--dim); }
+.note.error { color: #ff8a80; }
+
+/* Shown when no script is open. */
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.9rem;
 }

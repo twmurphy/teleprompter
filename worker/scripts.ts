@@ -103,12 +103,17 @@ export async function handleScripts(
     const draft = readDraft(await request.json().catch(() => null))
     if (!draft) return json({ error: 'Invalid script' }, 400)
 
+    // A script's name is its opening line, so editing the body renames it. That
+    // keeps the sidebar honest without a separate rename step to remember.
+    const title =
+      draft.title?.trim() ?? (draft.body !== undefined ? titleFrom(draft.body) : undefined)
+
     // COALESCE leaves a field alone when the client did not send it.
     const result = await env.DB.prepare(
       `UPDATE scripts SET title = COALESCE(?, title), body = COALESCE(?, body), updated_at = ?
        WHERE id = ? AND user_email = ?`,
     )
-      .bind(draft.title ?? null, draft.body ?? null, now, id, who.email)
+      .bind(title ?? null, draft.body ?? null, now, id, who.email)
       .run()
 
     if (!result.meta.changes) return json({ error: 'Not found' }, 404)
