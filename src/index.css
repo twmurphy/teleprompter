@@ -57,6 +57,16 @@ button {
 
 button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 
+/* Holds the reading area. The settings panel overlays this rather than sitting
+   in flow, so opening it does not resize the script — the reading line would
+   otherwise land somewhere else the moment the panel closed. */
+.content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
 /* --- edit mode ------------------------------------------------------- */
 
 .editor {
@@ -80,12 +90,20 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 
 /* --- play mode ------------------------------------------------------- */
 
-.stage {
+/* Holds the scroller plus the reading-line guide, which must not scroll. */
+.stage-wrap {
   flex: 1;
   min-height: 0;
   width: 100%;
   max-width: var(--column);
   margin: 0 auto;
+  position: relative;
+  display: flex;
+}
+
+.stage {
+  flex: 1;
+  min-height: 0;
   /* Makes the stage the offsetParent, so word offsetTop is measured against it. */
   position: relative;
   overflow-y: auto;
@@ -117,3 +135,50 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
    boundary between the two is the position indicator, so the active word needs
    no colour of its own — it just keeps the default. */
 .stage .said { color: var(--dim); }
+
+/* --- settings --------------------------------------------------------- */
+
+/* Sits under the header: a camera framing the shot covers the lower screen,
+   so controls belong at the top. Overlaid, not in flow — see .content. */
+.settings {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem 1.2rem;
+  width: 100%;
+  max-width: var(--column);
+  margin: 0 auto;
+  border-bottom: 1px solid #232329;
+  background: #131317;
+  font-size: 0.8rem;
+  color: var(--dim);
+}
+
+.settings label { display: flex; flex-direction: column; gap: 0.35rem; }
+.settings b { color: var(--fg); font-weight: 600; }
+
+.settings input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+  /* Comfortable to drag with a thumb. */
+  height: 1.6rem;
+}
+
+.settings-actions { display: flex; justify-content: flex-end; gap: 0.4rem; }
+
+/* Marks where the current word will sit, for lining up against a camera. */
+.guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 1;
+}

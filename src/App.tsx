@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { advanceCursor, parseScript } from './match'
 import { useDictation, type Utterance } from './useDictation'
+import { LIMITS, useSettings, type Settings } from './useSettings'
 
 const STORAGE_KEY = 'teleprompter:script'
 
@@ -74,6 +75,8 @@ export default function App() {
   )
 
   const dictation = useDictation({ onUtterance: handleUtterance })
+  const { settings, update, reset } = useSettings()
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   // Entering Play starts listening and goes fullscreen; leaving it undoes both.
   // There is no manual control — reading aloud is the only thing Play mode is
@@ -108,20 +111,46 @@ export default function App() {
             Play
           </button>
         </div>
+
+        <button
+          className={settingsOpen ? 'on' : ''}
+          onClick={() => setSettingsOpen((open) => !open)}
+          aria-label="Reading settings"
+        >
+          Settings
+        </button>
       </header>
 
-      {mode === 'edit' ? (
-        <textarea
-          className="editor"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Paste or type your script…"
-          spellCheck={false}
-        />
-      ) : (
-        <Stage script={script} text={text} cursor={cursor} onSeek={moveCursor} />
-      )}
+      <div className="content">
+        {settingsOpen && (
+          <SettingsPanel
+            settings={settings}
+            onChange={update}
+            onReset={reset}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
 
+        {mode === 'edit' ? (
+          <textarea
+            className="editor"
+            style={{ fontSize: `calc(1.1rem * ${settings.scale})` }}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Paste or type your script…"
+            spellCheck={false}
+          />
+        ) : (
+          <Stage
+            script={script}
+            text={text}
+            cursor={cursor}
+            onSeek={moveCursor}
+            settings={settings}
+            showGuide={settingsOpen}
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -131,6 +160,9 @@ type StageProps = {
   text: string
   cursor: number
   onSeek: (index: number) => void
+  settings: Settings
+  /** Marks where the reading line falls, while it is being adjusted. */
+  showGuide: boolean
 }
 
 /**
@@ -143,15 +175,15 @@ type StageProps = {
  */
 const SCROLL_DURATION = 2000
 
-/**
- * Where the active word sits, as a fraction of the stage height. Higher up
- * leaves more of the script visible ahead of you. This also sets the lead-in
- * and lead-out padding below, so the first and last words can still reach the
- * line — keep the two derived from this one value.
- */
-const READING_LINE = 0.25
-
-const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) {
+const Stage = memo(function Stage({
+  script,
+  text,
+  cursor,
+  onSeek,
+  settings,
+  showGuide,
+}: StageProps) {
+  const { scale, readingLine } = settings
   const activeRef = useRef<HTMLSpanElement | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef(0)
@@ -163,7 +195,7 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
 
     const from = container.scrollTop
     const to =
-      active.offsetTop - container.clientHeight * READING_LINE + active.clientHeight / 2
+      active.offsetTop - container.clientHeight * readingLine + active.clientHeight / 2
     const distance = to - from
     let startedAt: number | null = null
 
@@ -180,7 +212,8 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
     cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(step)
     return () => cancelAnimationFrame(frameRef.current)
-  }, [cursor])
+    // Re-runs when the reading line moves so the change is visible immediately.
+  }, [cursor, readingLine])
 
   let cut = 0
   const nodes = script.map((word, i) => {
@@ -202,19 +235,85 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
   })
 
   return (
-    <div className="stage" ref={containerRef}>
+    <div className="stage-wrap">
+      {/* Sits outside the scroller so it stays put while the script moves. */}
+      {showGuide && (
+        <div className="guide" style={{ top: `${readingLine * 100}%` }} />
+      )}
+      <div
+        className="stage"
+        ref={containerRef}
+        // Scales the responsive size rather than replacing it, so the script
+        // still adapts to the screen it is on.
+        style={{ fontSize: `calc(clamp(1.25rem, 4.8vw, 3rem) * ${scale})` }}
+      >
       {/* Lead-in and lead-out space lives on the inner element. Put it on the
           scroll container instead and its padding sets a floor on the box
           height, which forces the whole page to scroll. */}
       <div
         className="stage-inner"
         style={{
-          paddingTop: `${READING_LINE * 100}vh`,
-          paddingBottom: `${(1 - READING_LINE) * 100}vh`,
+          paddingTop: `${readingLine * 100}vh`,
+          paddingBottom: `${(1 - readingLine) * 100}vh`,
         }}
       >
-        {nodes}
+          {nodes}
+        </div>
       </div>
     </div>
   )
 })
+
+/**
+ * Text size and reading position. Both are physical constraints of a phone
+ * propped behind a camera rather than styling, so they are adjustable from
+ * either mode and take effect while you watch.
+ */
+function SettingsPanel({
+  settings,
+  onChange,
+  onReset,
+  onClose,
+}: {
+  settings: Settings
+  onChange: (patch: Partial<Settings>) => void
+  onReset: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="settings">
+      <label>
+        <span>
+          Text size <b>{Math.round(settings.scale * 100)}%</b>
+        </span>
+        <input
+          type="range"
+          min={LIMITS.scale.min}
+          max={LIMITS.scale.max}
+          step={LIMITS.scale.step}
+          value={settings.scale}
+          onChange={(e) => onChange({ scale: Number(e.target.value) })}
+        />
+      </label>
+
+      <label>
+        <span>
+          Eye position <b>{Math.round(settings.readingLine * 100)}% from top</b>
+        </span>
+        <input
+          type="range"
+          min={LIMITS.readingLine.min}
+          max={LIMITS.readingLine.max}
+          step={LIMITS.readingLine.step}
+          value={settings.readingLine}
+          onChange={(e) => onChange({ readingLine: Number(e.target.value) })}
+        />
+      </label>
+
+      <div className="settings-actions">
+        <button onClick={onReset}>Reset</button>
+        <button onClick={onClose}>Done</button>
+      </div>
+    </div>
+  )
+}
