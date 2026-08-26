@@ -38,12 +38,36 @@ export default function App() {
     setCursor(next)
   }, [])
 
-  // Each transcript is matched from wherever the cursor currently sits. Words
-  // the engine re-sends fall outside the narrow seek range and are ignored,
-  // which is what keeps this stable without extra bookkeeping.
+  // Where the cursor stood when the current utterance began.
+  const anchorRef = useRef(0)
+  const utteranceRef = useRef('')
+
+  /** Manual repositioning also re-anchors, so speech resumes from the new spot. */
+  const seek = useCallback(
+    (next: number) => {
+      anchorRef.current = next
+      utteranceRef.current = ''
+      moveCursor(next)
+    },
+    [moveCursor],
+  )
+
+  /**
+   * The engine re-sends a whole utterance each time it firms up, so the same
+   * words arrive repeatedly. Matching each revision from the anchor rather than
+   * from the live cursor makes that idempotent: re-sent words land where they
+   * landed before instead of matching a later copy of themselves and walking
+   * the cursor down the script.
+   */
   const handleUtterance = useCallback(
-    ({ words }: Utterance) => {
-      moveCursor(advanceCursor(script, cursorRef.current, words))
+    ({ id, words, isFinal }: Utterance) => {
+      if (id !== utteranceRef.current) {
+        utteranceRef.current = id
+        anchorRef.current = cursorRef.current
+      }
+      const next = advanceCursor(script, anchorRef.current, words)
+      moveCursor(next)
+      if (isFinal) anchorRef.current = next
     },
     [script, moveCursor],
   )
@@ -108,7 +132,7 @@ export default function App() {
         <div className="tools">
           <button
             className="icon"
-            onClick={() => moveCursor(0)}
+            onClick={() => seek(0)}
             aria-label="Back to the start of the script"
             title="Back to the start"
           >
@@ -171,7 +195,7 @@ export default function App() {
             script={script}
             text={text}
             cursor={cursor}
-            onSeek={moveCursor}
+            onSeek={seek}
             settings={settings}
             showGuide={settingsOpen}
           />
