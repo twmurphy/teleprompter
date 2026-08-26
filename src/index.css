@@ -91,7 +91,9 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
   overflow-y: auto;
   white-space: pre-wrap;
   padding: 0 1.2rem;
-  font-size: clamp(1.6rem, 5.5vw, 3rem);
+  /* Scales with the viewport: around 20px on a phone, up to 48px on a desktop.
+     Phones are held closer than a laptop sits, so they need less. */
+  font-size: clamp(1.25rem, 4.8vw, 3rem);
   line-height: 1.5;
   font-weight: 600;
   color: var(--fg);
@@ -111,9 +113,10 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 /* Lead-in and lead-out padding is set from READING_LINE in App.tsx, so the
    first and last words can reach the same line as everything else. */
 
+/* Spoken words recede; everything from the current word on stays bright. The
+   boundary between the two is the position indicator, so the active word needs
+   no colour of its own — it just keeps the default. */
 .stage .said { color: var(--dim); }
-
-.stage .now { color: var(--accent); }
 
 
 /* --- loading interstitial -------------------------------------------- */
