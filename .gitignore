@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Speech model: 39MB, hosted on the server rather than committed.
+public/models/

@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "vosk-browser": "^0.0.8"
   },
   "devDependencies": {
     "@types/dom-speech-recognition": "^0.0.12",

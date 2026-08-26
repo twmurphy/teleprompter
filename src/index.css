@@ -141,9 +141,14 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
   font-size: 0.8rem;
   color: var(--dim);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
 }
+
+.engine-choice { display: flex; gap: 0.3rem; }
+
+.engine-error { color: #ff8a80; }
 
 .engine button {
   font-size: 0.75rem;

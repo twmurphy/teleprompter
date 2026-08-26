@@ -7,8 +7,10 @@ import {
   type Diagnosis,
   type Utterance,
 } from './useDictation'
+import { useVosk } from './useVosk'
 
 const STORAGE_KEY = 'teleprompter:script'
+const ENGINE_KEY = 'teleprompter:engine'
 
 const SAMPLE = `Tap Edit to replace this with your own script.
 
@@ -53,7 +55,19 @@ export default function App() {
     [script, moveCursor],
   )
 
-  const dictation = useDictation({ onUtterance: handleUtterance })
+  const [offline, setOffline] = useState(
+    () => localStorage.getItem(ENGINE_KEY) === 'offline',
+  )
+  useEffect(() => {
+    localStorage.setItem(ENGINE_KEY, offline ? 'offline' : 'cloud')
+  }, [offline])
+
+  // Both engines are created but only the selected one is ever started; they
+  // are inert until then. Hooks cannot be called conditionally, and this keeps
+  // the choice a one-line swap rather than two divergent code paths.
+  const cloud = useDictation({ onUtterance: handleUtterance })
+  const local = useVosk({ onUtterance: handleUtterance })
+  const dictation = offline ? local : cloud
 
   // Entering Play starts listening and goes fullscreen; leaving it undoes both.
   // There is no manual control — reading aloud is the only thing Play mode is
@@ -99,7 +113,11 @@ export default function App() {
             placeholder="Paste or type your script…"
             spellCheck={false}
           />
-          <EngineCheck />
+          <EngineCheck
+            offline={offline}
+            onChange={setOffline}
+            error={dictation.error}
+          />
         </div>
       ) : (
         <Stage script={script} text={text} cursor={cursor} onSeek={moveCursor} />
@@ -203,10 +221,19 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
 })
 
 /**
- * Whether this device can recognise speech without a network. Lives in Edit
- * mode only — it is a setup question, and Play mode should stay clean.
+ * Engine choice and whether this device can recognise speech without a network.
+ * Lives in Edit mode only — it is a setup question, and Play mode should stay
+ * clean.
  */
-function EngineCheck() {
+function EngineCheck({
+  offline,
+  onChange,
+  error,
+}: {
+  offline: boolean
+  onChange: (offline: boolean) => void
+  error: string | null
+}) {
   const [info, setInfo] = useState<Diagnosis | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -216,40 +243,56 @@ function EngineCheck() {
 
   useEffect(() => refresh(), [refresh])
 
-  if (!info) return null
-  if (!info.supported) {
-    return <p className="engine">No speech recognition in this browser — use Chrome.</p>
-  }
-
-  const offline =
-    info.onDevice === 'available'
-      ? 'works offline'
-      : info.onDevice === 'downloading'
-        ? 'downloading offline pack…'
-        : info.onDevice === 'downloadable'
-          ? 'offline pack available'
-          : info.onDevice === 'no-api'
-            ? 'online only (browser too old for offline)'
-            : 'online only — no offline pack for this device'
+  const browserOffline =
+    info?.onDevice === 'available'
+      ? 'this browser can also work offline'
+      : info?.onDevice === 'downloading'
+        ? 'downloading browser offline pack…'
+        : info?.onDevice === 'downloadable'
+          ? 'browser offline pack available'
+          : null
 
   return (
-    <p className="engine">
-      {info.lang} · {offline}
-      {(info.onDevice === 'downloadable' || info.onDevice === 'downloading') && (
+    <div className="engine">
+      <div className="engine-choice">
         <button
-          disabled={busy}
-          onClick={() => {
-            setBusy(true)
-            void installOnDevice(info.lang).finally(() => {
-              setBusy(false)
-              refresh()
-            })
-          }}
+          className={offline ? '' : 'on'}
+          onClick={() => onChange(false)}
         >
-          {busy ? 'Downloading…' : 'Download'}
+          Cloud
         </button>
+        <button
+          className={offline ? 'on' : ''}
+          onClick={() => onChange(true)}
+        >
+          Offline
+        </button>
+      </div>
+      <span>
+        {offline
+          ? 'Vosk on this device. No network needed, lower accuracy, 39MB on first use.'
+          : 'Google speech. Needs a connection, more accurate.'}
+      </span>
+      {error && <span className="engine-error">{error}</span>}
+      {browserOffline && (
+        <span>
+          {browserOffline}
+          {(info?.onDevice === 'downloadable' || info?.onDevice === 'downloading') && (
+            <button
+              disabled={busy}
+              onClick={() => {
+                setBusy(true)
+                void installOnDevice(info.lang).finally(() => {
+                  setBusy(false)
+                  refresh()
+                })
+              }}
+            >
+              {busy ? 'Downloading…' : 'Download'}
+            </button>
+          )}
+        </span>
       )}
-      <button onClick={refresh}>Recheck</button>
-    </p>
+    </div>
   )
 }
