@@ -1,32 +1,26 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-  type Ref,
-} from 'react'
-import { advanceCursor, parseScript, type ScriptWord } from './match'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { advanceCursor, parseScript } from './match'
 import { useDictation, type Utterance } from './useDictation'
 
 const STORAGE_KEY = 'teleprompter:script'
 
 const SAMPLE = `Tap Edit to replace this with your own script.
 
-Switch to Play and start reading aloud. Words light up as they are recognised
-and the script scrolls to keep your place.
+Switch to Play, hit the microphone, and start reading aloud. The words light
+up as they are recognised and the page keeps the line you are on in the middle
+of the screen.
 
-If it ever loses you, just tap the word you are actually on.`
+If it ever loses your place, just tap the word you are actually on.`
 
 type Mode = 'edit' | 'play'
+
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('edit')
   const [text, setText] = useState(
     () => localStorage.getItem(STORAGE_KEY) ?? SAMPLE,
   )
+  const [cursor, setCursor] = useState(0)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, text)
@@ -34,15 +28,13 @@ export default function App() {
 
   const script = useMemo(() => parseScript(text), [text])
 
-  // The cursor never enters React state. Advancing a word touches only the two
-  // affected elements through the Stage handle; putting it in state would
-  // re-render every word in the script several times a second.
-  const cursorRef = useRef(0)
-  const stageRef = useRef<StageHandle>(null)
-
+  // The engine can deliver several batches before React re-renders, so the
+  // cursor is tracked in a ref and updated synchronously. Reading `cursor`
+  // here would match every batch against a stale position.
+  const cursorRef = useRef(cursor)
   const moveCursor = useCallback((next: number) => {
     cursorRef.current = next
-    stageRef.current?.setCursor(next)
+    setCursor(next)
   }, [])
 
   // Each transcript is matched from wherever the cursor currently sits. Words
@@ -101,20 +93,29 @@ export default function App() {
           spellCheck={false}
         />
       ) : (
-        <Stage ref={stageRef} script={script} text={text} onSeek={moveCursor} />
+        <Stage script={script} text={text} cursor={cursor} onSeek={moveCursor} />
       )}
+
     </div>
   )
 }
 
+type StageProps = {
+  script: ReturnType<typeof parseScript>
+  text: string
+  cursor: number
+  onSeek: (index: number) => void
+}
+
 /**
- * How quickly the scroll closes the gap to the reading line, per frame.
- * The loop always eases toward the current target, so a target that moves
- * mid-flight is the normal case rather than an interruption — no animation is
- * ever restarted, which is what kept the old fixed-duration ease permanently
- * behind a fast reader.
+ * The scrolling script.
+ *
+ * Ported from Tom's teleprompter: on each cursor change, ease the scroll
+ * position toward the active word over 2s with an easeOutQuad curve. The long,
+ * decelerating curve is what makes word-by-word movement read as a glide rather
+ * than a series of steps.
  */
-const FOLLOW = 0.16
+const SCROLL_DURATION = 2000
 
 /**
  * Where the active word sits, as a fraction of the stage height. Higher up
@@ -124,83 +125,36 @@ const FOLLOW = 0.16
  */
 const READING_LINE = 0.25
 
-export type StageHandle = { setCursor: (index: number) => void }
-
-type StageProps = {
-  script: ScriptWord[]
-  text: string
-  onSeek: (index: number) => void
-  ref?: Ref<StageHandle>
-}
-
-/**
- * The scrolling script.
- *
- * Words are rendered once per script change and never re-rendered to move the
- * cursor. Advancing repaints only the elements between the old and new
- * position — normally one or two — because a React pass over a thousand-word
- * script is the difference between keeping up with a speaker and trailing them
- * on a phone.
- */
-const Stage = memo(function Stage({ script, text, onSeek, ref }: StageProps) {
+const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) {
+  const activeRef = useRef<HTMLSpanElement | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const wordsRef = useRef<(HTMLSpanElement | null)[]>([])
-  const cursorRef = useRef(0)
-  const targetRef = useRef(0)
+  const frameRef = useRef(0)
 
-  const setCursor = useCallback((next: number) => {
-    const words = wordsRef.current
-    const previous = cursorRef.current
-    cursorRef.current = next
-
-    // Only the range between the two positions can have changed appearance.
-    const from = Math.max(0, Math.min(previous, next))
-    const to = Math.min(Math.max(previous, next), words.length - 1)
-    for (let i = from; i <= to; i++) {
-      const element = words[i]
-      if (element) element.className = i < next ? 'said' : i === next ? 'now' : ''
-    }
-
-    const active = words[next]
+  useEffect(() => {
     const container = containerRef.current
-    if (active && container) {
-      targetRef.current =
-        active.offsetTop - container.clientHeight * READING_LINE + active.clientHeight / 2
-    }
-  }, [])
+    const active = activeRef.current
+    if (!container || !active) return
 
-  useImperativeHandle(ref, () => ({ setCursor }), [setCursor])
+    const from = container.scrollTop
+    const to =
+      active.offsetTop - container.clientHeight * READING_LINE + active.clientHeight / 2
+    const distance = to - from
+    let startedAt: number | null = null
 
-  // A single loop for the lifetime of Play mode, easing toward whatever the
-  // current target is.
-  useEffect(() => {
-    let frame = 0
-    const follow = () => {
-      const container = containerRef.current
-      if (container) {
-        const delta = targetRef.current - container.scrollTop
-        if (Math.abs(delta) > 0.5) container.scrollTop += delta * FOLLOW
-      }
-      frame = requestAnimationFrame(follow)
-    }
-    frame = requestAnimationFrame(follow)
-    return () => cancelAnimationFrame(frame)
-  }, [])
+    const easeOutQuad = (t: number) => t * (2 - t)
 
-  // Editing the script resets the position. Classes have to be rewritten here
-  // too: React only touches className when its own previous value differs, and
-  // it has no idea we have been mutating these elements behind its back, so a
-  // re-render would otherwise leave stale highlighting in place. Runs after the
-  // ref callbacks, so every element is attached by this point.
-  useEffect(() => {
-    cursorRef.current = 0
-    targetRef.current = 0
-    wordsRef.current.length = script.length
-    for (let i = 0; i < wordsRef.current.length; i++) {
-      const element = wordsRef.current[i]
-      if (element) element.className = i === 0 ? 'now' : ''
+    const step = (now: number) => {
+      startedAt ??= now
+      const progress = Math.min((now - startedAt) / SCROLL_DURATION, 1)
+      container.scrollTop = from + distance * easeOutQuad(progress)
+      if (progress < 1) frameRef.current = requestAnimationFrame(step)
     }
-  }, [script])
+
+    // Replace any in-flight scroll rather than letting two loops fight.
+    cancelAnimationFrame(frameRef.current)
+    frameRef.current = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(frameRef.current)
+  }, [cursor])
 
   let cut = 0
   const nodes = script.map((word, i) => {
@@ -211,10 +165,8 @@ const Stage = memo(function Stage({ script, text, onSeek, ref }: StageProps) {
       <span key={i}>
         {gap}
         <span
-          ref={(element) => {
-            wordsRef.current[i] = element
-          }}
-          className={i === 0 ? 'now' : ''}
+          ref={i === cursor ? activeRef : undefined}
+          className={i < cursor ? 'said' : i === cursor ? 'now' : ''}
           onClick={() => onSeek(i)}
         >
           {word.raw}
