@@ -1,16 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { advanceCursor, parseScript } from './match'
-import {
-  diagnose,
-  installOnDevice,
-  useDictation,
-  type Diagnosis,
-  type Utterance,
-} from './useDictation'
-import { useVosk, type LoadPhase } from './useVosk'
+import { useVosk, type LoadPhase, type Utterance } from './useVosk'
 
 const STORAGE_KEY = 'teleprompter:script'
-const ENGINE_KEY = 'teleprompter:engine'
 
 const SAMPLE = `Tap Edit to replace this with your own script.
 
@@ -54,27 +46,12 @@ export default function App() {
     [script, moveCursor],
   )
 
-  // Offline is the default: a lost signal would otherwise be a hard failure,
-  // and it is the engine Tom tested in the field.
-  const [offline, setOffline] = useState(
-    () => localStorage.getItem(ENGINE_KEY) !== 'cloud',
-  )
-  useEffect(() => {
-    localStorage.setItem(ENGINE_KEY, offline ? 'offline' : 'cloud')
-  }, [offline])
+  const dictation = useVosk({ onUtterance: handleUtterance })
+  const { phase, progress, preload } = dictation
 
-  // Both engines are created but only the selected one is ever started; they
-  // are inert until then. Hooks cannot be called conditionally, and this keeps
-  // the choice a one-line swap rather than two divergent code paths.
-  const cloud = useDictation({ onUtterance: handleUtterance })
-  const local = useVosk({ onUtterance: handleUtterance })
-  const dictation = offline ? local : cloud
-
-  // Prepare the speech model up front so the first Play is instant. Only worth
-  // the bandwidth if the offline engine is actually selected.
-  useEffect(() => {
-    if (offline) local.preload()
-  }, [offline, local])
+  // Fetch the model before showing anything. Nothing here works without it, so
+  // there is no useful half-loaded state to let the reader into.
+  useEffect(() => preload(), [preload])
 
   // Entering Play starts listening and goes fullscreen; leaving it undoes both.
   // There is no manual control — reading aloud is the only thing Play mode is
@@ -90,6 +67,10 @@ export default function App() {
       dictation.stop()
     }
     setMode(next)
+  }
+
+  if (phase !== 'ready') {
+    return <Loading phase={phase} progress={progress} onRetry={preload} />
   }
 
   return (
@@ -111,25 +92,14 @@ export default function App() {
         </div>
       </header>
 
-      {offline && local.phase !== 'ready' && local.phase !== 'idle' && (
-        <ModelLoading phase={local.phase} progress={local.progress} />
-      )}
-
       {mode === 'edit' ? (
-        <div className="edit">
-          <textarea
-            className="editor"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Paste or type your script…"
-            spellCheck={false}
-          />
-          <EngineCheck
-            offline={offline}
-            onChange={setOffline}
-            error={dictation.error}
-          />
-        </div>
+        <textarea
+          className="editor"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Paste or type your script…"
+          spellCheck={false}
+        />
       ) : (
         <Stage script={script} text={text} cursor={cursor} onSeek={moveCursor} />
       )}
@@ -232,114 +202,46 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
 })
 
 /**
- * Engine choice and whether this device can recognise speech without a network.
- * Lives in Edit mode only — it is a setup question, and Play mode should stay
- * clean.
+ * Shown instead of the app until speech recognition is ready. The model is
+ * 39MB and nothing in here works without it, so there is no half-loaded state
+ * worth letting the reader into.
  */
-function EngineCheck({
-  offline,
-  onChange,
-  error,
-}: {
-  offline: boolean
-  onChange: (offline: boolean) => void
-  error: string | null
-}) {
-  const [info, setInfo] = useState<Diagnosis | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const refresh = useCallback(() => {
-    diagnose().then(setInfo).catch(() => setInfo(null))
-  }, [])
-
-  useEffect(() => refresh(), [refresh])
-
-  const browserOffline =
-    info?.onDevice === 'available'
-      ? 'this browser can also work offline'
-      : info?.onDevice === 'downloading'
-        ? 'downloading browser offline pack…'
-        : info?.onDevice === 'downloadable'
-          ? 'browser offline pack available'
-          : null
-
-  return (
-    <div className="engine">
-      <div className="engine-choice">
-        <button
-          className={offline ? '' : 'on'}
-          onClick={() => onChange(false)}
-        >
-          Cloud
-        </button>
-        <button
-          className={offline ? 'on' : ''}
-          onClick={() => onChange(true)}
-        >
-          Offline
-        </button>
-      </div>
-      <span>
-        {offline
-          ? 'Vosk on this device. No network needed, lower accuracy, 39MB on first use.'
-          : 'Google speech. Needs a connection, more accurate.'}
-      </span>
-      {error && <span className="engine-error">{error}</span>}
-      {browserOffline && (
-        <span>
-          {browserOffline}
-          {(info?.onDevice === 'downloadable' || info?.onDevice === 'downloading') && (
-            <button
-              disabled={busy}
-              onClick={() => {
-                setBusy(true)
-                void installOnDevice(info.lang).finally(() => {
-                  setBusy(false)
-                  refresh()
-                })
-              }}
-            >
-              {busy ? 'Downloading…' : 'Download'}
-            </button>
-          )}
-        </span>
-      )}
-    </div>
-  )
-}
-
-/**
- * First-run progress for the offline model. The download is 39MB, so silence
- * here would look like the app had hung.
- */
-function ModelLoading({
+function Loading({
   phase,
   progress,
+  onRetry,
 }: {
   phase: LoadPhase
   progress: number
+  onRetry: () => void
 }) {
   const percent = Math.round(progress * 100)
-  const failed = phase === 'failed'
+
+  if (phase === 'failed') {
+    return (
+      <div className="loading">
+        <p>Could not load the speech model.</p>
+        <button onClick={onRetry}>Try again</button>
+      </div>
+    )
+  }
 
   return (
     <div className="loading">
+      <p>
+        {phase === 'downloading'
+          ? `Downloading speech model… ${percent}%`
+          : 'Starting speech engine…'}
+      </p>
       <div className="loading-track">
-        {/* Once downloaded there is still model setup to do, which reports no
-            progress of its own — so the bar fills and the label carries on. */}
+        {/* Setup after the download reports no progress of its own, so the bar
+            sits full while the label carries on. */}
         <div
           className="loading-fill"
           style={{ width: phase === 'downloading' ? `${percent}%` : '100%' }}
-          data-failed={failed ? 'yes' : 'no'}
         />
       </div>
-      <span>
-        {failed
-          ? 'Could not load the offline model — switch to Cloud to keep going.'
-          : phase === 'downloading'
-            ? `Downloading offline speech model… ${percent}%`
-            : 'Starting speech engine…'}
-      </span>
+      <small>First run only — it is cached afterwards.</small>
     </div>
   )
 }

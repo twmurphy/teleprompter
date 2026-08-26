@@ -1,7 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KaldiRecognizer, Model } from 'vosk-browser'
 import { transcriptWords } from './match'
-import type { DictationState, Utterance } from './useDictation'
+
+/** Whether the recogniser is running. */
+export type DictationState = 'off' | 'starting' | 'listening' | 'error'
+
+/**
+ * One continuous stretch of speech. Vosk grows `words` as it hears more and
+ * resets after each final result, so a caller can match the whole utterance
+ * each time rather than trying to diff out what is new.
+ */
+export type Utterance = {
+  id: string
+  /** Every word of this utterance so far, normalised. */
+  words: string[]
+  isFinal: boolean
+  /** Raw text, for display. */
+  text: string
+}
 
 /**
  * Offline recognition with Vosk compiled to WebAssembly.
