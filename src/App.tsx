@@ -12,6 +12,12 @@ import { useDictation, type Utterance } from './useDictation'
 import { LIMITS, useSettings, type Settings } from './useSettings'
 import { useScripts, type SaveState, type ScriptSummary } from './useScripts'
 
+/**
+ * Extra words the cursor may pass in one update beyond what was spoken, to get
+ * over things the engine can never match — digits, symbols, times.
+ */
+const UNMATCHABLE_SLACK = 3
+
 type Mode = 'edit' | 'play'
 
 
@@ -41,6 +47,8 @@ export default function App() {
   // Where the cursor stood when the current utterance began.
   const anchorRef = useRef(0)
   const utteranceRef = useRef('')
+  // How many words this utterance held when we last looked.
+  const heardRef = useRef(0)
 
   /** Manual repositioning also re-anchors, so speech resumes from the new spot. */
   const seek = useCallback(
@@ -64,13 +72,24 @@ export default function App() {
       if (id !== utteranceRef.current) {
         utteranceRef.current = id
         anchorRef.current = cursorRef.current
+        heardRef.current = 0
       }
+
+      // Reading is bounded by speaking: an update carrying two new words cannot
+      // mean thirty words were read. Recognition restarts drop the audio spoken
+      // during the gap, and when tracking re-aligns afterwards it would
+      // otherwise replay the whole backlog in one frame — the lurch. The slack
+      // covers script tokens that can never be matched, like "10:30".
+      const spoken = Math.max(0, words.length - heardRef.current)
+      heardRef.current = words.length
+      const ceiling = cursorRef.current + spoken + UNMATCHABLE_SLACK
+
       const next = advanceCursor(script, anchorRef.current, words)
       // Speech only ever moves the cursor forward. The engine revises an
       // utterance as it firms up, and a revision that resolves earlier is it
       // changing its mind, not the reader going back — following that is what
       // makes the script rock. Backwards is reserved for tapping a word.
-      moveCursor(Math.max(next, cursorRef.current))
+      moveCursor(Math.min(Math.max(next, cursorRef.current), ceiling))
       if (isFinal) anchorRef.current = cursorRef.current
     },
     [script, moveCursor],
