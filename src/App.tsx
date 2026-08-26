@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { advanceCursor, parseScript } from './match'
-import { useVosk, type LoadPhase, type Utterance } from './useVosk'
+import { useDictation, type Utterance } from './useDictation'
 
 const STORAGE_KEY = 'teleprompter:script'
 
@@ -73,12 +73,7 @@ export default function App() {
     [script, moveCursor],
   )
 
-  const dictation = useVosk({ onUtterance: handleUtterance })
-  const { phase, progress, preload } = dictation
-
-  // Fetch the model before showing anything. Nothing here works without it, so
-  // there is no useful half-loaded state to let the reader into.
-  useEffect(() => preload(), [preload])
+  const dictation = useDictation({ onUtterance: handleUtterance })
 
   // Entering Play starts listening and goes fullscreen; leaving it undoes both.
   // There is no manual control — reading aloud is the only thing Play mode is
@@ -94,10 +89,6 @@ export default function App() {
       dictation.stop()
     }
     setMode(next)
-  }
-
-  if (phase !== 'ready') {
-    return <Loading phase={phase} progress={progress} onRetry={preload} />
   }
 
   return (
@@ -227,48 +218,3 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
     </div>
   )
 })
-
-/**
- * Shown instead of the app until speech recognition is ready. The model is
- * 39MB and nothing in here works without it, so there is no half-loaded state
- * worth letting the reader into.
- */
-function Loading({
-  phase,
-  progress,
-  onRetry,
-}: {
-  phase: LoadPhase
-  progress: number
-  onRetry: () => void
-}) {
-  const percent = Math.round(progress * 100)
-
-  if (phase === 'failed') {
-    return (
-      <div className="loading">
-        <p>Could not load the speech model.</p>
-        <button onClick={onRetry}>Try again</button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="loading">
-      <p>
-        {phase === 'downloading'
-          ? `Downloading speech model… ${percent}%`
-          : 'Starting speech engine…'}
-      </p>
-      <div className="loading-track">
-        {/* Setup after the download reports no progress of its own, so the bar
-            sits full while the label carries on. */}
-        <div
-          className="loading-fill"
-          style={{ width: phase === 'downloading' ? `${percent}%` : '100%' }}
-        />
-      </div>
-      <small>First run only — it is cached afterwards.</small>
-    </div>
-  )
-}
