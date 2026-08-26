@@ -91,6 +91,7 @@ export default function App() {
     } else {
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
       dictation.stop()
+      setSettingsOpen(false)
     }
     setMode(next)
   }
@@ -115,6 +116,8 @@ export default function App() {
           </button>
         </div>
 
+        {/* Only useful while reading, and Edit mode should stay uncluttered. */}
+        {mode === 'play' && (
         <div className="tools">
           <button
             className="icon"
@@ -134,6 +137,7 @@ export default function App() {
             <SlidersHorizontal size={18} aria-hidden />
           </button>
         </div>
+        )}
       </header>
 
       <div className="content">
