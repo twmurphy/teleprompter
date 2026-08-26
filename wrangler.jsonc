@@ -4,6 +4,10 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-08-26",
   "observability": { "enabled": true },
+  // Keep the workers.dev URL during development: it is the only place the API
+  // can be tested with no Access in front, which is how the deny path is checked.
+  "workers_dev": true,
+  "routes": [{ "pattern": "teleprompter.twm-sandbox.com", "custom_domain": true }],
   // Neither is secret: the AUD is a public application identifier and the team
   // domain hosts the public signing keys. They pin token checks to this app.
   "vars": {
