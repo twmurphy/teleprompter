@@ -111,12 +111,19 @@ type StageProps = {
  * The scrolling script.
  *
  * Ported from Tom's teleprompter: on each cursor change, ease the scroll
- * position toward the active word over 2s with an easeOutQuad curve, parking
- * the word a third of the way down so there is more script visible ahead than
- * behind. The long, decelerating curve is what makes word-by-word movement read
- * as a glide rather than a series of steps.
+ * position toward the active word over 2s with an easeOutQuad curve. The long,
+ * decelerating curve is what makes word-by-word movement read as a glide rather
+ * than a series of steps.
  */
 const SCROLL_DURATION = 2000
+
+/**
+ * Where the active word sits, as a fraction of the stage height. Higher up
+ * leaves more of the script visible ahead of you. This also sets the lead-in
+ * and lead-out padding below, so the first and last words can still reach the
+ * line — keep the two derived from this one value.
+ */
+const READING_LINE = 0.25
 
 const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) {
   const activeRef = useRef<HTMLSpanElement | null>(null)
@@ -129,7 +136,8 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
     if (!container || !active) return
 
     const from = container.scrollTop
-    const to = active.offsetTop - container.clientHeight / 3 + active.clientHeight / 2
+    const to =
+      active.offsetTop - container.clientHeight * READING_LINE + active.clientHeight / 2
     const distance = to - from
     let startedAt: number | null = null
 
@@ -172,7 +180,15 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
       {/* Lead-in and lead-out space lives on the inner element. Put it on the
           scroll container instead and its padding sets a floor on the box
           height, which forces the whole page to scroll. */}
-      <div className="stage-inner">{nodes}</div>
+      <div
+        className="stage-inner"
+        style={{
+          paddingTop: `${READING_LINE * 100}vh`,
+          paddingBottom: `${(1 - READING_LINE) * 100}vh`,
+        }}
+      >
+        {nodes}
+      </div>
     </div>
   )
 })

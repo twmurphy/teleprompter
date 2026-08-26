@@ -108,11 +108,8 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 }
 
 /* Already spoken: recede but stay readable if you need to back up. */
-/* Enough room to bring the first and last words to the reading line. */
-.stage-inner {
-  padding-top: 33vh;
-  padding-bottom: 67vh;
-}
+/* Lead-in and lead-out padding is set from READING_LINE in App.tsx, so the
+   first and last words can reach the same line as everything else. */
 
 .stage .said { color: var(--dim); }
 
