@@ -46,13 +46,12 @@ export default function App() {
    *
    * The matcher aligns a whole phrase rather than a word, so a re-sent
    * transcript lands where it landed before and needs no bookkeeping to make it
-   * idempotent. Speech still only moves forward: a revision resolving earlier is
-   * the engine changing its mind, not the reader going back.
+   * idempotent, and it decides for itself when going back is a re-read rather
+   * than the engine revising itself.
    */
   const handleUtterance = useCallback(
     ({ words }: Utterance) => {
-      const next = advanceCursor(script, cursorRef.current, words)
-      moveCursor(Math.max(next, cursorRef.current))
+      moveCursor(advanceCursor(script, cursorRef.current, words))
     },
     [script, moveCursor],
   )

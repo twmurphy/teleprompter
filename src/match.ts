@@ -58,10 +58,22 @@ const PHRASE = 8
  * from a dropped phrase instead of stalling, without inviting false matches.
  */
 const FORWARD = 30
-const BACK = 8
+const BACK = 20
 
 /** Words an alignment may step over — a misheard word, or "10:30" in the script. */
 const MAX_SKIPS = 2
+
+/**
+ * What it takes to move the cursor backwards.
+ *
+ * Going back is a real thing readers do — flub a line, say it again — but it is
+ * also what a revised transcript looks like when it resolves a word or two
+ * earlier. Following those made the script rock. A genuine re-read lines up
+ * several words well behind where we are, so both a solid alignment and a
+ * meaningful distance are required; a revision satisfies neither.
+ */
+const REREAD_WORDS = 3
+const REREAD_DISTANCE = 3
 
 /** Words too weak to establish a position alone, however close. */
 const COMMON = new Set([
@@ -125,7 +137,9 @@ export function advanceCursor(
   if (phrase.length === 0) return cursor
 
   let bestEnd = cursor
+  let bestStart = cursor
   let bestScore = 0
+  let bestMatched = 0
 
   const from = Math.max(0, cursor - BACK)
   const to = Math.min(script.length, cursor + FORWARD)
@@ -146,7 +160,17 @@ export function advanceCursor(
     if (score > bestScore) {
       bestScore = score
       bestEnd = end
+      bestStart = start
+      bestMatched = matched
     }
+  }
+
+  // Only a re-read goes backwards; a revision settling slightly earlier does not.
+  if (
+    bestEnd < cursor &&
+    (bestMatched < REREAD_WORDS || cursor - bestStart < REREAD_DISTANCE)
+  ) {
+    return cursor
   }
 
   return bestEnd
