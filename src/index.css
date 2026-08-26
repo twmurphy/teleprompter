@@ -155,3 +155,32 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
   padding: 0.35rem 0.7rem;
   min-height: 0;
 }
+
+/* --- offline model download ------------------------------------------ */
+
+.loading {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.7rem 1.2rem;
+  border-bottom: 1px solid #232329;
+  font-size: 0.8rem;
+  color: var(--dim);
+}
+
+.loading-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #1e1e24;
+  overflow: hidden;
+}
+
+.loading-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 200ms linear;
+}
+
+.loading-fill[data-failed='yes'] { background: #b3261e; }

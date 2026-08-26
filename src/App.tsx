@@ -7,18 +7,17 @@ import {
   type Diagnosis,
   type Utterance,
 } from './useDictation'
-import { useVosk } from './useVosk'
+import { useVosk, type LoadPhase } from './useVosk'
 
 const STORAGE_KEY = 'teleprompter:script'
 const ENGINE_KEY = 'teleprompter:engine'
 
 const SAMPLE = `Tap Edit to replace this with your own script.
 
-Switch to Play, hit the microphone, and start reading aloud. The words light
-up as they are recognised and the page keeps the line you are on in the middle
-of the screen.
+Switch to Play and start reading aloud. Words light up as they are recognised
+and the script scrolls to keep your place.
 
-If it ever loses your place, just tap the word you are actually on.`
+If it ever loses you, just tap the word you are actually on.`
 
 type Mode = 'edit' | 'play'
 
@@ -55,8 +54,10 @@ export default function App() {
     [script, moveCursor],
   )
 
+  // Offline is the default: a lost signal would otherwise be a hard failure,
+  // and it is the engine Tom tested in the field.
   const [offline, setOffline] = useState(
-    () => localStorage.getItem(ENGINE_KEY) === 'offline',
+    () => localStorage.getItem(ENGINE_KEY) !== 'cloud',
   )
   useEffect(() => {
     localStorage.setItem(ENGINE_KEY, offline ? 'offline' : 'cloud')
@@ -68,6 +69,12 @@ export default function App() {
   const cloud = useDictation({ onUtterance: handleUtterance })
   const local = useVosk({ onUtterance: handleUtterance })
   const dictation = offline ? local : cloud
+
+  // Prepare the speech model up front so the first Play is instant. Only worth
+  // the bandwidth if the offline engine is actually selected.
+  useEffect(() => {
+    if (offline) local.preload()
+  }, [offline, local])
 
   // Entering Play starts listening and goes fullscreen; leaving it undoes both.
   // There is no manual control — reading aloud is the only thing Play mode is
@@ -103,6 +110,10 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {offline && local.phase !== 'ready' && local.phase !== 'idle' && (
+        <ModelLoading phase={local.phase} progress={local.progress} />
+      )}
 
       {mode === 'edit' ? (
         <div className="edit">
@@ -293,6 +304,42 @@ function EngineCheck({
           )}
         </span>
       )}
+    </div>
+  )
+}
+
+/**
+ * First-run progress for the offline model. The download is 39MB, so silence
+ * here would look like the app had hung.
+ */
+function ModelLoading({
+  phase,
+  progress,
+}: {
+  phase: LoadPhase
+  progress: number
+}) {
+  const percent = Math.round(progress * 100)
+  const failed = phase === 'failed'
+
+  return (
+    <div className="loading">
+      <div className="loading-track">
+        {/* Once downloaded there is still model setup to do, which reports no
+            progress of its own — so the bar fills and the label carries on. */}
+        <div
+          className="loading-fill"
+          style={{ width: phase === 'downloading' ? `${percent}%` : '100%' }}
+          data-failed={failed ? 'yes' : 'no'}
+        />
+      </div>
+      <span>
+        {failed
+          ? 'Could not load the offline model — switch to Cloud to keep going.'
+          : phase === 'downloading'
+            ? `Downloading offline speech model… ${percent}%`
+            : 'Starting speech engine…'}
+      </span>
     </div>
   )
 }

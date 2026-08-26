@@ -24,13 +24,57 @@ const MODEL_URL = '/models/vosk-model-small-en-us-0.15.tar.gz'
 /** Chunk size for the audio pump. Smaller means lower latency, more callbacks. */
 const BUFFER_SIZE = 4096
 
+/**
+ * Download the model, reporting progress.
+ *
+ * `createModel` fetches the archive itself inside the worker and exposes no
+ * progress, so we stream it first purely to fill the HTTP cache and to have
+ * something honest to show a progress bar. The worker's own fetch then comes
+ * straight from cache.
+ */
+async function fetchWithProgress(url: string, onProgress: (fraction: number) => void) {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Could not fetch the speech model (${response.status})`)
+
+  const total = Number(response.headers.get('content-length'))
+  if (!total || !response.body) {
+    await response.arrayBuffer()
+    return
+  }
+
+  const reader = response.body.getReader()
+  let received = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    received += value.length
+    onProgress(Math.min(1, received / total))
+  }
+}
+
+/** Phases the caller can show while the engine is being prepared. */
+export type LoadPhase = 'idle' | 'downloading' | 'starting' | 'ready' | 'failed'
+
 // The library and the model are both expensive and safe to share, so they
-// outlive any one session and are fetched at most once per page load.
+// outlive any one session and are prepared at most once per page load.
 let modelPromise: Promise<Model> | null = null
-const loadModel = () =>
-  (modelPromise ??= import('vosk-browser').then(({ createModel }) =>
-    createModel(MODEL_URL),
-  ))
+
+function loadModel(onProgress: (fraction: number) => void, onPhase: (phase: LoadPhase) => void) {
+  return (modelPromise ??= (async () => {
+    onPhase('downloading')
+    await fetchWithProgress(MODEL_URL, onProgress)
+    onPhase('starting')
+    const { createModel } = await import('vosk-browser')
+    const model = await createModel(MODEL_URL)
+    onPhase('ready')
+    return model
+  })().catch((e: unknown) => {
+    // Let the next attempt retry rather than caching the failure forever.
+    modelPromise = null
+    onPhase('failed')
+    throw e
+  }))
+}
 
 type Options = {
   onUtterance: (utterance: Utterance) => void
@@ -39,6 +83,8 @@ type Options = {
 export function useVosk({ onUtterance }: Options) {
   const [state, setState] = useState<DictationState>('off')
   const [error, setError] = useState<string | null>(null)
+  const [phase, setPhase] = useState<LoadPhase>('idle')
+  const [progress, setProgress] = useState(0)
 
   const wantedRef = useRef(false)
   const streamRef = useRef<MediaStream | null>(null)
@@ -71,7 +117,7 @@ export function useVosk({ onUtterance }: Options) {
     setState('starting')
 
     try {
-      const model = await loadModel()
+      const model = await loadModel(setProgress, setPhase)
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -148,7 +194,17 @@ export function useVosk({ onUtterance }: Options) {
     }
   }, [])
 
+  /**
+   * Fetch the model ahead of time. Called on load so the first Play does not
+   * stall behind a 39MB download.
+   */
+  const preload = useCallback(() => {
+    loadModel(setProgress, setPhase).catch((e: unknown) => {
+      setError(e instanceof Error ? e.message : String(e))
+    })
+  }, [])
+
   useEffect(() => () => stop(), [stop])
 
-  return { state, error, start, stop }
+  return { state, error, phase, progress, preload, start, stop }
 }
