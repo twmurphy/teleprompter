@@ -1,6 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { advanceCursor, parseScript } from './match'
-import { useDictation, type Utterance } from './useDictation'
+import {
+  diagnose,
+  installOnDevice,
+  useDictation,
+  type Diagnosis,
+  type Utterance,
+} from './useDictation'
 
 const STORAGE_KEY = 'teleprompter:script'
 
@@ -85,13 +91,16 @@ export default function App() {
       </header>
 
       {mode === 'edit' ? (
-        <textarea
-          className="editor"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Paste or type your script…"
-          spellCheck={false}
-        />
+        <div className="edit">
+          <textarea
+            className="editor"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Paste or type your script…"
+            spellCheck={false}
+          />
+          <EngineCheck />
+        </div>
       ) : (
         <Stage script={script} text={text} cursor={cursor} onSeek={moveCursor} />
       )}
@@ -192,3 +201,55 @@ const Stage = memo(function Stage({ script, text, cursor, onSeek }: StageProps) 
     </div>
   )
 })
+
+/**
+ * Whether this device can recognise speech without a network. Lives in Edit
+ * mode only — it is a setup question, and Play mode should stay clean.
+ */
+function EngineCheck() {
+  const [info, setInfo] = useState<Diagnosis | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(() => {
+    diagnose().then(setInfo).catch(() => setInfo(null))
+  }, [])
+
+  useEffect(() => refresh(), [refresh])
+
+  if (!info) return null
+  if (!info.supported) {
+    return <p className="engine">No speech recognition in this browser — use Chrome.</p>
+  }
+
+  const offline =
+    info.onDevice === 'available'
+      ? 'works offline'
+      : info.onDevice === 'downloading'
+        ? 'downloading offline pack…'
+        : info.onDevice === 'downloadable'
+          ? 'offline pack available'
+          : info.onDevice === 'no-api'
+            ? 'online only (browser too old for offline)'
+            : 'online only — no offline pack for this device'
+
+  return (
+    <p className="engine">
+      {info.lang} · {offline}
+      {(info.onDevice === 'downloadable' || info.onDevice === 'downloading') && (
+        <button
+          disabled={busy}
+          onClick={() => {
+            setBusy(true)
+            void installOnDevice(info.lang).finally(() => {
+              setBusy(false)
+              refresh()
+            })
+          }}
+        >
+          {busy ? 'Downloading…' : 'Download'}
+        </button>
+      )}
+      <button onClick={refresh}>Recheck</button>
+    </p>
+  )
+}

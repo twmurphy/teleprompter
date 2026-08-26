@@ -29,6 +29,43 @@ export const dictationSupported = (): boolean => getCtor() !== null
 
 export type DictationState = 'off' | 'starting' | 'listening' | 'error'
 
+/** What the engines report for this browser. Shown in Edit mode. */
+export type Diagnosis = {
+  supported: boolean
+  lang: string
+  /** Whether recognition can run with no network. */
+  onDevice: Availability | 'no-api'
+}
+
+/**
+ * Probe on-device availability without starting a session.
+ *
+ * Worth checking per device rather than assuming: whether an offline engine
+ * exists is user-agent dependent, and Android delegates to the system speech
+ * service rather than the desktop's downloadable component.
+ */
+export async function diagnose(): Promise<Diagnosis> {
+  const Ctor = getCtor()
+  const lang = navigator.language || FALLBACK_LANG
+  if (!Ctor) return { supported: false, lang, onDevice: 'no-api' }
+  if (!Ctor.available) return { supported: true, lang, onDevice: 'no-api' }
+
+  const onDevice = await Ctor.available({
+    langs: [lang],
+    processLocally: true,
+    quality: 'dictation',
+  }).catch(() => 'unavailable' as const)
+
+  return { supported: true, lang, onDevice }
+}
+
+/** Ask the browser to download the offline language pack. */
+export async function installOnDevice(lang: string): Promise<boolean> {
+  const Ctor = getCtor()
+  if (!Ctor?.install) return false
+  return Ctor.install({ langs: [lang], processLocally: true }).catch(() => false)
+}
+
 const MESSAGES: Record<string, string> = {
   'not-allowed': 'Microphone blocked. Allow it in the site permissions.',
   'service-not-allowed': 'Speech service unavailable in this browser.',
