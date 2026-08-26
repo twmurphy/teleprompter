@@ -41,7 +41,32 @@ body {
   flex: none;
 }
 
-.modes { display: flex; gap: 0.4rem; }
+.tools { display: flex; gap: 0.4rem; }
+
+/* Edit and Play are one control with two states, not two separate actions. */
+.segmented {
+  display: flex;
+  border: 1px solid #2e2e36;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.segmented button + button { border-left: 1px solid #2e2e36; }
+
+/* Square, so the icon sits centred rather than in a wide pill. */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+}
 
 button {
   font: inherit;

@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Cog, RotateCcw } from 'lucide-react'
 import { advanceCursor, parseScript } from './match'
 import { useDictation, type Utterance } from './useDictation'
 import { LIMITS, useSettings, type Settings } from './useSettings'
@@ -97,28 +98,42 @@ export default function App() {
   return (
     <div className="app">
       <header className="bar">
-        <div className="modes">
+        <div className="segmented" role="group">
           <button
             className={mode === 'edit' ? 'on' : ''}
+            aria-pressed={mode === 'edit'}
             onClick={() => goTo('edit')}
           >
             Edit
           </button>
           <button
             className={mode === 'play' ? 'on' : ''}
+            aria-pressed={mode === 'play'}
             onClick={() => goTo('play')}
           >
             Play
           </button>
         </div>
 
-        <button
-          className={settingsOpen ? 'on' : ''}
-          onClick={() => setSettingsOpen((open) => !open)}
-          aria-label="Reading settings"
-        >
-          Settings
-        </button>
+        <div className="tools">
+          <button
+            className="icon"
+            onClick={() => moveCursor(0)}
+            aria-label="Back to the start of the script"
+            title="Back to the start"
+          >
+            <RotateCcw size={18} aria-hidden />
+          </button>
+          <button
+            className={settingsOpen ? 'icon on' : 'icon'}
+            onClick={() => setSettingsOpen((open) => !open)}
+            aria-label="Reading settings"
+            aria-expanded={settingsOpen}
+            title="Reading settings"
+          >
+            <Cog size={18} aria-hidden />
+          </button>
+        </div>
       </header>
 
       <div className="content">
