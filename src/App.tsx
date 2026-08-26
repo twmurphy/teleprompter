@@ -4,12 +4,39 @@ import { useVosk, type LoadPhase, type Utterance } from './useVosk'
 
 const STORAGE_KEY = 'teleprompter:script'
 
-const SAMPLE = `Tap Edit to replace this with your own script.
+const SAMPLE = `Good morning, and welcome.
 
-Switch to Play and start reading aloud. Words light up as they are recognised
-and the script scrolls to keep your place.
+This is a sample script designed to test a teleprompter at a comfortable speaking pace. As you read, pay attention to the size of the text, the scrolling speed, and how easily your eyes can follow each line.
 
-If it ever loses you, just tap the word you are actually on.`
+Today, we are testing several kinds of sentences.
+
+Some are short.
+
+Others are slightly longer, giving you time to see how the teleprompter handles natural pauses, changes in rhythm, and longer stretches of continuous speech.
+
+Now, let's test a few numbers. The time is 10:30. The temperature is 72 degrees. Our sample project includes 3 stages, 12 tasks, and a target completion rate of 95 percent.
+
+Next, we'll test punctuation.
+
+Does a question mark create a natural pause? What about a comma, a semicolon, or a colon? And when a sentence ends, is there enough space to comfortably move to the next line?
+
+Here is a slightly faster section.
+
+The goal of a good teleprompter is not to make the speaker appear to be reading. Instead, it should help the speaker maintain eye contact, deliver information clearly, and move through the script at a natural and consistent pace.
+
+Now slow down.
+
+Take a brief pause.
+
+Look directly at the camera.
+
+Then continue.
+
+This final section can be used to test the end of the script. Check that the last few lines remain visible long enough to read comfortably and that the scrolling stops at the correct position.
+
+Thank you for testing the teleprompter.
+
+This concludes the sample script.`
 
 type Mode = 'edit' | 'play'
 
