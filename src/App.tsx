@@ -11,6 +11,7 @@ import { advanceCursor, parseScript } from './match'
 import { useDictation, type Utterance } from './useDictation'
 import { LIMITS, useSettings, type Settings } from './useSettings'
 import { useScripts, type SaveState, type ScriptSummary } from './useScripts'
+import { useWakeLock } from './useWakeLock'
 
 type Mode = 'edit' | 'play'
 
@@ -57,6 +58,9 @@ export default function App() {
   )
 
   const dictation = useDictation({ onUtterance: handleUtterance })
+
+  // Reading aloud looks like idling to a phone: no touches, no scrolling.
+  useWakeLock(mode === 'play')
   const { settings, update, reset } = useSettings()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
