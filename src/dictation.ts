@@ -20,3 +20,18 @@ export function insertSpoken(body: string, caret: number, spoken: string): Inser
     caret: at + insertion.length,
   }
 }
+
+/**
+ * Whether `spoken` has just been written already.
+ *
+ * A recognition restart can re-deliver the tail of what it already heard as a
+ * fresh utterance, with a legitimately new id — so identity cannot catch it and
+ * the text has to. Compared against what precedes the caret rather than the
+ * whole document, so repeating a phrase later in a script is still allowed.
+ */
+export function alreadyWritten(body: string, caret: number, spoken: string): boolean {
+  const phrase = spoken.trim()
+  if (!phrase) return true
+  const before = body.slice(0, Math.max(0, Math.min(caret, body.length))).trimEnd()
+  return before.endsWith(phrase)
+}

@@ -13,7 +13,7 @@ import { useDictation, type Utterance } from './useDictation'
 import { LIMITS, useSettings, type Settings } from './useSettings'
 import { useScripts, type SaveState, type ScriptSummary } from './useScripts'
 import { useWakeLock } from './useWakeLock'
-import { insertSpoken } from './dictation'
+import { alreadyWritten, insertSpoken } from './dictation'
 
 type Mode = 'edit' | 'play'
 
@@ -63,11 +63,13 @@ export default function App() {
     (spoken: string) => {
       const editor = editorRef.current
       const body = scripts.current?.body ?? ''
-      const { body: next, caret } = insertSpoken(
-        body,
-        editor ? editor.selectionStart : body.length,
-        spoken,
-      )
+      const at = editor ? editor.selectionStart : body.length
+
+      // A restart re-delivering audio it already gave us arrives as a new
+      // utterance, so identity cannot catch it — the text has to.
+      if (alreadyWritten(body, at, spoken)) return
+
+      const { body: next, caret } = insertSpoken(body, at, spoken)
 
       scripts.edit(next)
 

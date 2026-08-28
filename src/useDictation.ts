@@ -185,17 +185,26 @@ export function useDictation({ onUtterance }: Options) {
     // The user may have pressed Stop while we were negotiating.
     if (!wantedRef.current) return
 
+    /** Stop a recogniser talking to us, so a restart cannot leave two running. */
+    const detach = (recognition: SpeechRecognition) => {
+      recognition.onstart = null
+      recognition.onresult = null
+      recognition.onerror = null
+      recognition.onend = null
+    }
+
     const build = (): SpeechRecognition => {
       const recognition = new Ctor()
+      // Captured per instance. Reading the ref inside onresult would stamp a
+      // late result from a previous recogniser with the current session,
+      // colliding ids and defeating de-duplication downstream.
+      const session = (sessionRef.current += 1)
       recognition.continuous = true
       recognition.interimResults = true
       recognition.lang = configRef.current.lang
       if (configRef.current.processLocally) recognition.processLocally = true
 
-      recognition.onstart = () => {
-        sessionRef.current += 1
-        setState('listening')
-      }
+      recognition.onstart = () => setState('listening')
 
       recognition.onresult = (event) => {
         // Only the newest result matters; earlier ones are already settled.
@@ -204,7 +213,7 @@ export function useDictation({ onUtterance }: Options) {
         if (!result) return
         const text = result[0].transcript.trim()
         onUtteranceRef.current({
-          id: `${sessionRef.current}:${index}`,
+          id: `${session}:${index}`,
           words: transcriptWords(text),
           isFinal: result.isFinal,
           text,
@@ -228,11 +237,19 @@ export function useDictation({ onUtterance }: Options) {
       }
 
       recognition.onend = () => {
+        // This one is finished; make sure it can never speak again.
+        detach(recognition)
         if (!wantedRef.current) return
+
         // Android cuts the session short — pick straight back up. The short
         // delay avoids "already started" errors from restarting inside onend.
         setTimeout(() => {
           if (!wantedRef.current) return
+          // Belt and braces: abandon anything still attached before replacing it.
+          if (recognitionRef.current && recognitionRef.current !== recognition) {
+            detach(recognitionRef.current)
+            recognitionRef.current.abort()
+          }
           const next = build()
           recognitionRef.current = next
           next.start()
