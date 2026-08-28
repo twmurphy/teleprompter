@@ -92,6 +92,8 @@ button {
 
 button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 
+button:disabled { opacity: 0.4; cursor: default; }
+
 /* Recording, in the way a record button is red. */
 button.live {
   background: #b3261e;

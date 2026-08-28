@@ -1,5 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Check,
+  Copy,
   LogOut,
   Mic,
   PanelLeft,
@@ -52,6 +54,7 @@ export default function App() {
    * idempotent, and it decides for itself when going back is a re-read rather
    * than the engine revising itself.
    */
+  const [copied, setCopied] = useState(false)
   const [dictating, setDictating] = useState(false)
   const [hearing, setHearing] = useState('')
   const editorRef = useRef<HTMLTextAreaElement>(null)
@@ -102,6 +105,17 @@ export default function App() {
   )
 
   const dictation = useDictation({ onUtterance: handleUtterance })
+
+  /** Copy the whole script out, for pasting somewhere that can format it. */
+  const copyScript = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Denied or unsupported. Selecting the text still works.
+    }
+  }
 
   const toggleDictation = () => {
     if (dictating) {
@@ -176,6 +190,15 @@ export default function App() {
         {/* Only useful while reading, and Edit mode should stay uncluttered. */}
         {mode === 'edit' && scripts.current && (
           <div className="tools">
+            <button
+              className="icon"
+              onClick={() => void copyScript()}
+              aria-label="Copy the script"
+              title={copied ? 'Copied' : 'Copy script'}
+              disabled={!text}
+            >
+              {copied ? <Check size={18} aria-hidden /> : <Copy size={18} aria-hidden />}
+            </button>
             <button
               className={dictating ? 'icon live' : 'icon'}
               onClick={toggleDictation}
