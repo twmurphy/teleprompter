@@ -13,7 +13,7 @@ import { useDictation, type Utterance } from './useDictation'
 import { LIMITS, useSettings, type Settings } from './useSettings'
 import { useScripts, type SaveState, type ScriptSummary } from './useScripts'
 import { useWakeLock } from './useWakeLock'
-import { alreadyWritten, insertSpoken } from './dictation'
+import { applySpeech, type Pending } from './dictation'
 
 type Mode = 'edit' | 'play'
 
@@ -55,26 +55,29 @@ export default function App() {
   const [dictating, setDictating] = useState(false)
   const [hearing, setHearing] = useState('')
   const editorRef = useRef<HTMLTextAreaElement>(null)
-  // Utterances arrive repeatedly as they firm up; each may only be written once.
-  const writtenRef = useRef(new Set<string>())
+  // The stretch of text the current utterance owns, so growth revises it in
+  // place rather than being appended as if it were new speech.
+  const pendingRef = useRef<Pending>(null)
 
-  /** Insert dictated words where the caret is, or at the end. */
-  const insertSpeech = useCallback(
-    (spoken: string) => {
+  /** Write dictated words into the script, revising as the utterance grows. */
+  const writeSpeech = useCallback(
+    (spoken: string, id: string) => {
       const editor = editorRef.current
       const body = scripts.current?.body ?? ''
-      const at = editor ? editor.selectionStart : body.length
+      const edit = applySpeech(
+        body,
+        editor ? editor.selectionStart : body.length,
+        spoken,
+        id,
+        pendingRef.current,
+      )
+      if (!edit) return
 
-      // A restart re-delivering audio it already gave us arrives as a new
-      // utterance, so identity cannot catch it — the text has to.
-      if (alreadyWritten(body, at, spoken)) return
-
-      const { body: next, caret } = insertSpoken(body, at, spoken)
-
-      scripts.edit(next)
+      pendingRef.current = edit.pending
+      scripts.edit(edit.body)
 
       // Keep typing where the dictation left off, once React has re-rendered.
-      requestAnimationFrame(() => editor?.setSelectionRange(caret, caret))
+      requestAnimationFrame(() => editor?.setSelectionRange(edit.caret, edit.caret))
     },
     [scripts],
   )
@@ -92,11 +95,10 @@ export default function App() {
         return
       }
       setHearing(isFinal ? '' : spoken)
-      if (!isFinal || !spoken || writtenRef.current.has(id)) return
-      writtenRef.current.add(id)
-      insertSpeech(spoken)
+      if (!isFinal || !spoken) return
+      writeSpeech(spoken, id)
     },
-    [mode, script, moveCursor, insertSpeech],
+    [mode, script, moveCursor, writeSpeech],
   )
 
   const dictation = useDictation({ onUtterance: handleUtterance })
@@ -107,7 +109,7 @@ export default function App() {
       setDictating(false)
       setHearing('')
     } else {
-      writtenRef.current.clear()
+      pendingRef.current = null
       void dictation.start()
       setDictating(true)
     }

@@ -1,37 +1,69 @@
-/** Where dictated words landed, and where the caret should sit afterwards. */
-export type Insertion = { body: string; caret: number }
+/** The stretch of text the current utterance has written, so it can be revised. */
+export type Pending = { id: string; text: string; start: number } | null
+
+/** A document edit produced by dictation. */
+export type SpeechEdit = { body: string; caret: number; pending: Pending }
 
 /**
- * Place spoken words into `body` at `caret`.
+ * Apply dictated words to a document.
  *
- * Speech arrives as bare words with no leading space, so one is added unless
- * the text already ends in whitespace — otherwise dictating after a word runs
- * straight into it. Nothing is added at the start of an empty document, or when
- * the caret follows a line break, so dictation does not indent paragraphs.
+ * Speech does not arrive as a series of separate phrases. An utterance grows and
+ * is revised — "hello", then "hello my", then "hello my name" — and on Android
+ * each growth can arrive as a settled result with a fresh id, so treating them
+ * as new phrases writes the sentence once per word.
+ *
+ * What an utterance writes is therefore treated as a region that it owns and may
+ * rewrite, rather than as an append. A later update replaces that region when it
+ * carries the same id or simply extends what is already there; anything else is
+ * new speech and is inserted after it.
+ *
+ * Returns null when there is nothing to do.
  */
-export function insertSpoken(body: string, caret: number, spoken: string): Insertion {
-  const at = Math.max(0, Math.min(caret, body.length))
+export function applySpeech(
+  body: string,
+  caret: number,
+  spoken: string,
+  id: string,
+  pending: Pending,
+): SpeechEdit | null {
+  const phrase = spoken.trim()
+  if (!phrase) return null
+
+  // The region is only ours if it still reads as we left it; the writer may have
+  // typed in the meantime.
+  const intact =
+    pending !== null &&
+    body.slice(pending.start, pending.start + pending.text.length) === pending.text
+
+  if (intact && pending !== null) {
+    const revises = pending.id === id || phrase.startsWith(pending.text)
+    if (revises) {
+      if (phrase === pending.text) return null // nothing changed
+      const end = pending.start + pending.text.length
+      return {
+        body: body.slice(0, pending.start) + phrase + body.slice(end),
+        caret: pending.start + phrase.length,
+        pending: { id, text: phrase, start: pending.start },
+      }
+    }
+  }
+
+  // New speech follows the region just written, which is where dictation
+  // naturally continues. If the caret has been moved away from there, the
+  // writer has gone somewhere else and that wins.
+  const clamped = Math.max(0, Math.min(caret, body.length))
+  const end = intact && pending !== null ? pending.start + pending.text.length : -1
+  const continuing =
+    intact && pending !== null && clamped >= pending.start && clamped <= end
+  const at = continuing ? end : clamped
+
   const before = body.slice(0, at)
   const separator = before.length > 0 && !/\s$/.test(before) ? ' ' : ''
-  const insertion = separator + spoken
+  const start = at + separator.length
 
   return {
-    body: before + insertion + body.slice(at),
-    caret: at + insertion.length,
+    body: before + separator + phrase + body.slice(at),
+    caret: start + phrase.length,
+    pending: { id, text: phrase, start },
   }
-}
-
-/**
- * Whether `spoken` has just been written already.
- *
- * A recognition restart can re-deliver the tail of what it already heard as a
- * fresh utterance, with a legitimately new id — so identity cannot catch it and
- * the text has to. Compared against what precedes the caret rather than the
- * whole document, so repeating a phrase later in a script is still allowed.
- */
-export function alreadyWritten(body: string, caret: number, spoken: string): boolean {
-  const phrase = spoken.trim()
-  if (!phrase) return true
-  const before = body.slice(0, Math.max(0, Math.min(caret, body.length))).trimEnd()
-  return before.endsWith(phrase)
 }
