@@ -66,6 +66,17 @@ export async function installOnDevice(lang: string): Promise<boolean> {
   return Ctor.install({ langs: [lang], processLocally: true }).catch(() => false)
 }
 
+/**
+ * Errors worth giving up on. Everything else — a dropped network, a hiccup in
+ * the audio pipeline — is transient, and stopping on those is how a session
+ * dies mid-sentence with nothing to show for it.
+ */
+const FATAL = new Set(['not-allowed', 'service-not-allowed'])
+
+/** How long without any sign of life before assuming the chain has broken. */
+const STALL_MS = 12_000
+const WATCHDOG_MS = 4_000
+
 const MESSAGES: Record<string, string> = {
   'not-allowed': 'Microphone blocked. Allow it in the site permissions.',
   'service-not-allowed': 'Speech service unavailable in this browser.',
@@ -153,15 +164,119 @@ export function useDictation({ onUtterance }: Options) {
   // Bumped on every restart so utterance ids from a previous session can never
   // collide with the new one's.
   const sessionRef = useRef(0)
-  // Keep the latest callback without re-creating the recogniser on every render.
+  // Last sign the engine is alive. A restart chain that breaks leaves this
+  // frozen, which is the only way to notice from outside.
+  const aliveRef = useRef(0)
   const onUtteranceRef = useRef(onUtterance)
   onUtteranceRef.current = onUtterance
 
+  /** Stop a recogniser talking to us, so a restart cannot leave two running. */
+  const detach = (recognition: SpeechRecognition) => {
+    recognition.onstart = null
+    recognition.onresult = null
+    recognition.onerror = null
+    recognition.onend = null
+  }
+
   const stop = useCallback(() => {
     wantedRef.current = false
-    recognitionRef.current?.stop()
+    const current = recognitionRef.current
+    if (current) {
+      detach(current)
+      current.abort()
+    }
     recognitionRef.current = null
     setState('off')
+  }, [])
+
+  /**
+   * Build a recogniser, attach it and start listening.
+   *
+   * `start()` can throw — "already started" is routine on Android — and an
+   * unguarded throw here breaks the restart chain permanently: nothing is
+   * listening, nothing reports it, and the only symptom is that tracking
+   * quietly stops. So a failure schedules another attempt rather than escaping.
+   */
+  const launch = useCallback(() => {
+    const Ctor = getCtor()
+    if (!Ctor || !wantedRef.current) return
+
+    const previous = recognitionRef.current
+    if (previous) {
+      detach(previous)
+      try {
+        previous.abort()
+      } catch {
+        // Already dead; nothing to abandon.
+      }
+    }
+
+    const recognition = new Ctor()
+    // Captured per instance. Reading the ref inside onresult would stamp a late
+    // result from a previous recogniser with the current session, colliding ids.
+    const session = (sessionRef.current += 1)
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = configRef.current.lang
+    if (configRef.current.processLocally) recognition.processLocally = true
+
+    const alive = () => {
+      aliveRef.current = Date.now()
+    }
+
+    recognition.onstart = () => {
+      alive()
+      setState('listening')
+    }
+    recognition.onaudiostart = alive
+    recognition.onspeechstart = alive
+
+    recognition.onresult = (event) => {
+      alive()
+      const index = event.results.length - 1
+      const result = event.results[index]
+      if (!result) return
+      const text = result[0].transcript.trim()
+      onUtteranceRef.current({
+        id: `${session}:${index}`,
+        words: transcriptWords(text),
+        isFinal: result.isFinal,
+        text,
+      })
+    }
+
+    recognition.onerror = (event) => {
+      alive()
+      if (FATAL.has(event.error)) {
+        setError(MESSAGES[event.error] ?? event.error)
+        setState('error')
+        wantedRef.current = false
+        return
+      }
+      // The on-device pack went missing between our check and start().
+      if (event.error === 'language-not-supported' && configRef.current.processLocally) {
+        configRef.current = { ...configRef.current, processLocally: false }
+      }
+      // Everything else is transient; onend will bring us back.
+    }
+
+    recognition.onend = () => {
+      detach(recognition)
+      if (!wantedRef.current) return
+      // Android cuts the session short constantly. The short delay avoids
+      // "already started" from restarting inside onend.
+      setTimeout(launch, 100)
+    }
+
+    recognitionRef.current = recognition
+    alive()
+
+    try {
+      recognition.start()
+    } catch {
+      // Try again shortly rather than leaving the chain broken.
+      setTimeout(launch, 500)
+    }
   }, [])
 
   const start = useCallback(async () => {
@@ -182,93 +297,40 @@ export function useDictation({ onUtterance }: Options) {
       // Availability checks are best-effort; the cloud engine is always there.
       configRef.current = { lang: FALLBACK_LANG, processLocally: false }
     }
-    // The user may have pressed Stop while we were negotiating.
     if (!wantedRef.current) return
+    launch()
+  }, [launch])
 
-    /** Stop a recogniser talking to us, so a restart cannot leave two running. */
-    const detach = (recognition: SpeechRecognition) => {
-      recognition.onstart = null
-      recognition.onresult = null
-      recognition.onerror = null
-      recognition.onend = null
-    }
+  /**
+   * Confirm recognition is actually running, and revive it if not.
+   *
+   * Offered to the caller so a deliberate action — tapping a word to correct
+   * the position — can double as a check that the thing is still listening.
+   */
+  const ensureListening = useCallback(() => {
+    if (!wantedRef.current) return
+    if (Date.now() - aliveRef.current > STALL_MS || !recognitionRef.current) launch()
+  }, [launch])
 
-    const build = (): SpeechRecognition => {
-      const recognition = new Ctor()
-      // Captured per instance. Reading the ref inside onresult would stamp a
-      // late result from a previous recogniser with the current session,
-      // colliding ids and defeating de-duplication downstream.
-      const session = (sessionRef.current += 1)
-      recognition.continuous = true
-      recognition.interimResults = true
-      recognition.lang = configRef.current.lang
-      if (configRef.current.processLocally) recognition.processLocally = true
+  // Watchdog: if nothing has been heard from the engine for a while, assume the
+  // restart chain broke and rebuild it. Silence alone does not trigger this —
+  // an idle recogniser still ends and restarts, which counts as life.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!wantedRef.current) return
+      if (Date.now() - aliveRef.current > STALL_MS) launch()
+    }, WATCHDOG_MS)
+    return () => clearInterval(timer)
+  }, [launch])
 
-      recognition.onstart = () => setState('listening')
-
-      recognition.onresult = (event) => {
-        // Only the newest result matters; earlier ones are already settled.
-        const index = event.results.length - 1
-        const result = event.results[index]
-        if (!result) return
-        const text = result[0].transcript.trim()
-        onUtteranceRef.current({
-          id: `${session}:${index}`,
-          words: transcriptWords(text),
-          isFinal: result.isFinal,
-          text,
-        })
-      }
-
-      recognition.onerror = (event) => {
-        // Silence and aborts are routine; onend will restart us.
-        if (event.error === 'no-speech' || event.error === 'aborted') return
-
-        // The on-device pack went missing between our check and start().
-        // Drop to the cloud engine and let onend restart us on it.
-        if (event.error === 'language-not-supported' && configRef.current.processLocally) {
-          configRef.current = { ...configRef.current, processLocally: false }
-          return
-        }
-
-        setError(MESSAGES[event.error] ?? event.error)
-        setState('error')
-        wantedRef.current = false
-      }
-
-      recognition.onend = () => {
-        // This one is finished; make sure it can never speak again.
-        detach(recognition)
-        if (!wantedRef.current) return
-
-        // Android cuts the session short — pick straight back up. The short
-        // delay avoids "already started" errors from restarting inside onend.
-        setTimeout(() => {
-          if (!wantedRef.current) return
-          // Belt and braces: abandon anything still attached before replacing it.
-          if (recognitionRef.current && recognitionRef.current !== recognition) {
-            detach(recognitionRef.current)
-            recognitionRef.current.abort()
-          }
-          const next = build()
-          recognitionRef.current = next
-          next.start()
-        }, 100)
-      }
-
-      return recognition
-    }
-
-    const recognition = build()
-    recognitionRef.current = recognition
-    recognition.start()
-  }, [])
-
-  // Never leave the mic open behind us.
   useEffect(() => () => {
     wantedRef.current = false
-    recognitionRef.current?.abort()
+    const current = recognitionRef.current
+    if (current) {
+      detach(current)
+      current.abort()
+    }
   }, [])
 
-  return { state, error, start, stop }
+  return { state, error, start, stop, ensureListening }
 }

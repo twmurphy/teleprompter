@@ -4,6 +4,7 @@ import {
   Copy,
   LogOut,
   Mic,
+  MicOff,
   PanelLeft,
   Plus,
   RotateCcw,
@@ -43,8 +44,21 @@ export default function App() {
     setCursor(next)
   }, [])
 
-  /** Manual repositioning wins outright, in either direction. */
-  const seek = useCallback((next: number) => moveCursor(next), [moveCursor])
+  /**
+   * Manual repositioning wins outright, in either direction — and doubles as a
+   * check that recognition is still alive, since reaching for the script is
+   * exactly when you would notice it had stopped.
+   */
+  const seek = useCallback(
+    (next: number) => {
+      moveCursor(next)
+      dictationRef.current?.()
+    },
+    [moveCursor],
+  )
+
+  // Filled in below; seek is defined before the hook that provides it.
+  const dictationRef = useRef<(() => void) | null>(null)
 
   /**
    * Match the tail of what was just said against the script around the cursor.
@@ -105,6 +119,11 @@ export default function App() {
   )
 
   const dictation = useDictation({ onUtterance: handleUtterance })
+  dictationRef.current = dictation.ensureListening
+
+  /** Listening was asked for but is not happening. */
+  const deaf =
+    (mode === 'play' || dictating) && dictation.state !== 'listening'
 
   /** Copy the whole script out, for pasting somewhere that can format it. */
   const copyScript = async () => {
@@ -201,7 +220,7 @@ export default function App() {
               {copied ? <Check size={18} aria-hidden /> : <Copy size={18} aria-hidden />}
             </button>
             <button
-              className={dictating ? 'icon live' : 'icon'}
+              className={dictating ? (deaf ? 'icon warn' : 'icon live') : 'icon'}
               onClick={toggleDictation}
               aria-label={dictating ? 'Stop dictation' : 'Dictate into this script'}
               aria-pressed={dictating}
@@ -214,6 +233,16 @@ export default function App() {
 
         {mode === 'play' && (
         <div className="tools">
+          {deaf && (
+            <button
+              className="icon warn"
+              onClick={dictation.ensureListening}
+              aria-label="Not listening — tap to restart"
+              title="Not listening — tap to restart"
+            >
+              <MicOff size={18} aria-hidden />
+            </button>
+          )}
           <button
             className="icon"
             onClick={() => seek(0)}

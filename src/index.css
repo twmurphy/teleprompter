@@ -94,6 +94,13 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 
 button:disabled { opacity: 0.4; cursor: default; }
 
+/* Asked to listen, but not listening. */
+button.warn {
+  background: #6b1f1a;
+  border-color: #b3261e;
+  color: #ffd7d3;
+}
+
 /* Recording, in the way a record button is red. */
 button.live {
   background: #b3261e;
