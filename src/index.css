@@ -92,6 +92,13 @@ button {
 
 button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 
+/* Recording, in the way a record button is red. */
+button.live {
+  background: #b3261e;
+  border-color: #b3261e;
+  color: #fff;
+}
+
 /* Holds the reading area. The settings panel overlays this rather than sitting
    in flow, so opening it does not resize the script — the reading line would
    otherwise land somewhere else the moment the panel closed. */
@@ -103,6 +110,33 @@ button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 }
 
 /* --- edit mode ------------------------------------------------------- */
+
+/* Stacks the editor above the dictation readout; .content is a row. */
+.edit {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: var(--column);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.edit .editor { max-width: none; margin: 0; }
+
+/* What the engine is hearing right now, while dictating. */
+.hearing {
+  flex: none;
+  margin: 0;
+  padding: 0.6rem 1.2rem;
+  border-top: 1px solid #232329;
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .editor {
   flex: 1;

@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   LogOut,
+  Mic,
   PanelLeft,
   Plus,
   RotateCcw,
@@ -12,6 +13,7 @@ import { useDictation, type Utterance } from './useDictation'
 import { LIMITS, useSettings, type Settings } from './useSettings'
 import { useScripts, type SaveState, type ScriptSummary } from './useScripts'
 import { useWakeLock } from './useWakeLock'
+import { insertSpoken } from './dictation'
 
 type Mode = 'edit' | 'play'
 
@@ -50,14 +52,64 @@ export default function App() {
    * idempotent, and it decides for itself when going back is a re-read rather
    * than the engine revising itself.
    */
-  const handleUtterance = useCallback(
-    ({ words }: Utterance) => {
-      moveCursor(advanceCursor(script, cursorRef.current, words))
+  const [dictating, setDictating] = useState(false)
+  const [hearing, setHearing] = useState('')
+  const editorRef = useRef<HTMLTextAreaElement>(null)
+  // Utterances arrive repeatedly as they firm up; each may only be written once.
+  const writtenRef = useRef(new Set<string>())
+
+  /** Insert dictated words where the caret is, or at the end. */
+  const insertSpeech = useCallback(
+    (spoken: string) => {
+      const editor = editorRef.current
+      const body = scripts.current?.body ?? ''
+      const { body: next, caret } = insertSpoken(
+        body,
+        editor ? editor.selectionStart : body.length,
+        spoken,
+      )
+
+      scripts.edit(next)
+
+      // Keep typing where the dictation left off, once React has re-rendered.
+      requestAnimationFrame(() => editor?.setSelectionRange(caret, caret))
     },
-    [script, moveCursor],
+    [scripts],
+  )
+
+  /**
+   * One microphone, two jobs. In Play the words move the cursor through a known
+   * script; in Edit they are the text itself, so only settled results are
+   * written — an interim would put words in the document that the engine then
+   * revises.
+   */
+  const handleUtterance = useCallback(
+    ({ id, words, text: spoken, isFinal }: Utterance) => {
+      if (mode === 'play') {
+        moveCursor(advanceCursor(script, cursorRef.current, words))
+        return
+      }
+      setHearing(isFinal ? '' : spoken)
+      if (!isFinal || !spoken || writtenRef.current.has(id)) return
+      writtenRef.current.add(id)
+      insertSpeech(spoken)
+    },
+    [mode, script, moveCursor, insertSpeech],
   )
 
   const dictation = useDictation({ onUtterance: handleUtterance })
+
+  const toggleDictation = () => {
+    if (dictating) {
+      dictation.stop()
+      setDictating(false)
+      setHearing('')
+    } else {
+      writtenRef.current.clear()
+      void dictation.start()
+      setDictating(true)
+    }
+  }
 
   // Reading aloud looks like idling to a phone: no touches, no scrolling.
   useWakeLock(mode === 'play')
@@ -71,6 +123,8 @@ export default function App() {
   // block the read.
   const goTo = (next: Mode) => {
     if (next === 'play') {
+      setDictating(false)
+      setHearing('')
       document.documentElement.requestFullscreen?.().catch(() => {})
       void dictation.start()
     } else {
@@ -116,6 +170,20 @@ export default function App() {
         </div>
 
         {/* Only useful while reading, and Edit mode should stay uncluttered. */}
+        {mode === 'edit' && scripts.current && (
+          <div className="tools">
+            <button
+              className={dictating ? 'icon live' : 'icon'}
+              onClick={toggleDictation}
+              aria-label={dictating ? 'Stop dictation' : 'Dictate into this script'}
+              aria-pressed={dictating}
+              title={dictating ? 'Stop dictation' : 'Dictate'}
+            >
+              <Mic size={18} aria-hidden />
+            </button>
+          </div>
+        )}
+
         {mode === 'play' && (
         <div className="tools">
           <button
@@ -165,6 +233,7 @@ export default function App() {
 
         {mode === 'edit' ? (
           scripts.current ? (
+            <div className="edit">
             <textarea
               className="editor"
               style={{ fontSize: `calc(1.1rem * ${settings.scale})` }}
@@ -172,7 +241,14 @@ export default function App() {
               onChange={(e) => scripts.edit(e.target.value)}
               placeholder="Paste or type your script…"
               spellCheck={false}
+              ref={editorRef}
             />
+            {dictating && (
+              <p className="hearing">
+                {hearing || 'Listening — speak and it will be typed in.'}
+              </p>
+            )}
+            </div>
           ) : (
             <p className="empty">
               {scripts.loading ? 'Loading…' : 'No script open. Create one to start.'}
