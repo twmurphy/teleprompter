@@ -129,8 +129,9 @@ export default function App() {
     }
   }
 
-  // Reading aloud looks like idling to a phone: no touches, no scrolling.
-  useWakeLock(mode === 'play')
+  // Speaking looks like idling to a phone — no touches, no scrolling — whether
+  // the words are being read from the script or dictated into it.
+  useWakeLock(mode === 'play' || dictating)
   const { settings, update, reset } = useSettings()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
